@@ -2,9 +2,17 @@ local addonName, WC = ...
 
 -- Scans the Auction House one item at a time with C_AuctionHouse.SendSearchQuery.
 -- Blizzard limits search queries to about 100 per minute, so queries are paced.
+--
+-- Two scan kinds:
+--   "crates" - the 22 crates and their 69 materials
+--   "writs"  - phase 1: the 150 Craftsman's Writ items
+--              phase 2: the requested items (only for writs that are for sale, unless the
+--                       "ignore writs not for sale" filter is off)
 local Scanner = {
   active = false,
-  results = {},   -- [itemID] = { status = "ok"|"short"|"none"|"timeout", min, cost, need, avail, time }
+  kind = nil,
+  -- [itemID] = { status = "listed"|"none"|"timeout", entries = { {unit, qty}, ... } cheapest first, min, avail, time }
+  results = {},
   index = 0,
   total = 0,
 }
@@ -14,35 +22,91 @@ local MIN_INTERVAL = 0.7   -- seconds between queries (~85 per minute)
 local TIMEOUT      = 4     -- seconds to wait for results before retrying
 local MAX_TRIES    = 3     -- searches per item (empty / partial answers are retried)
 local CACHE_WAIT   = 3     -- seconds to wait for the item to enter the client cache
+local KEEP_QTY     = 250   -- keep listings until this many items are covered (largest need is 200)
+local KEEP_ROWS    = 40
 
 local function PriceSorts()
   local priceOrder = (Enum and Enum.AuctionHouseSortOrder and Enum.AuctionHouseSortOrder.Price) or 0
   return { { sortOrder = priceOrder, reverseSort = false } }
 end
 
-function Scanner:BuildQueue()
-  local queue, byID = {}, {}
-  local function add(itemID, need)
-    local q = byID[itemID]
-    if q then
-      if need > q.need then q.need = need end
-    else
-      q = { itemID = itemID, need = need }
-      byID[itemID] = q
-      queue[#queue + 1] = q
-    end
+-- ---------------------------------------------------------------------------
+-- prices
+
+-- Cost of buying `qty` of an item from the scanned listings, cheapest first.
+-- Returns cost (nil if unscanned / not listed / not enough), status, result.
+-- status: "ok" | "short" | "none" | "timeout" | nil (not scanned)
+function WC:CostFor(itemID, qty)
+  local res = Scanner.results[itemID]
+  if not res then return nil, nil, nil end
+  if res.status ~= "listed" then return nil, res.status, res end
+  local remain, cost = qty, 0
+  for _, e in ipairs(res.entries or {}) do
+    local take = math.min(remain, e[2])
+    cost = cost + take * e[1]
+    remain = remain - take
+    if remain <= 0 then return cost, "ok", res end
   end
-  for _, crate in ipairs(WC.CRATES) do
-    add(crate.id, 1)
-    for _, opt in ipairs(crate.opts) do
-      add(opt[1], opt[2])
-    end
-  end
-  return queue
+  return nil, "short", res
 end
 
-function Scanner:Start()
+-- ---------------------------------------------------------------------------
+-- item sets per scan kind
+
+local function Adder(queue, byID)
+  return function(itemID)
+    if not byID[itemID] then
+      byID[itemID] = true
+      queue[#queue + 1] = { itemID = itemID }
+    end
+  end
+end
+
+function WC:CrateItemSet()
+  local set = {}
+  for _, c in ipairs(WC.CRATES) do
+    set[c.id] = true
+    for _, o in ipairs(c.opts) do set[o[1]] = true end
+  end
+  return set
+end
+
+function WC:WritItemSet()
+  local set = {}
+  for _, w in ipairs(WC.WRITS) do set[w.writ] = true; set[w.item] = true end
+  return set
+end
+
+function Scanner:BuildQueue(kind)
+  local queue, byID = {}, {}
+  local add = Adder(queue, byID)
+  if kind == "writs" then
+    for _, w in ipairs(WC.WRITS) do add(w.writ) end
+  else
+    for _, c in ipairs(WC.CRATES) do
+      add(c.id)
+      for _, o in ipairs(c.opts) do add(o[1]) end
+    end
+  end
+  return queue, byID
+end
+
+-- Phase 2 of a writ scan: the requested items.
+function Scanner:WritPhase2()
+  local db = WC:DB()
+  local add = Adder(self.queue, self.queued)
+  for _, w in ipairs(WC.WRITS) do
+    local _, status = WC:CostFor(w.writ, 1)
+    if not db.hideNoWrit or status == "ok" then add(w.item) end
+  end
+end
+
+-- ---------------------------------------------------------------------------
+-- scan loop
+
+function Scanner:Start(kind)
   if self.active then return end
+  kind = (kind == "writs") and "writs" or "crates"
   if not WC.ahOpen then
     WC:Print(WC.L.OPEN_AH_FIRST)
     return
@@ -51,14 +115,23 @@ function Scanner:Start()
     WC:Print(WC.L.NO_API)
     return
   end
-  self.queue = self:BuildQueue()
+  self.kind = kind
+  self.phase = 1
+  self.queue, self.queued = self:BuildQueue(kind)
+  -- forget old prices for everything this scan covers (items shared with the other tab stay
+  -- until they are scanned again, so the other tab keeps its numbers)
+  local mine = (kind == "writs") and WC:WritItemSet() or WC:CrateItemSet()
+  local other = (kind == "writs") and WC:CrateItemSet() or WC:WritItemSet()
+  for itemID in pairs(mine) do
+    if not other[itemID] then self.results[itemID] = nil end
+  end
   self.total = #self.queue
   self.index = 0
   self.active = true
   self.itemToken = 0
   self.startedAt = GetTime()
-  self.results = {}
-  WC.UI:OnScanStart(self.total)
+  self.listed, self.missing = 0, 0
+  WC.UI:OnScanStart(kind, self.total)
   self:Next()
 end
 
@@ -69,14 +142,19 @@ function Scanner:Stop(reason)
   self.itemToken = (self.itemToken or 0) + 1
   if self.timer then self.timer:Cancel(); self.timer = nil end
   WC:SaveResults()
-  WC.UI:OnScanStopped(reason, self.index - 1, self.total)
+  WC.UI:OnScanStopped(self.kind, reason, self.index - 1, self.total)
 end
 
 function Scanner:Next()
   if not self.active then return end
   if self.timer then self.timer:Cancel(); self.timer = nil end
   self.index = self.index + 1
-  if self.index > self.total then
+  if self.index > #self.queue and self.kind == "writs" and self.phase == 1 then
+    self.phase = 2
+    self:WritPhase2()
+    self.total = #self.queue
+  end
+  if self.index > #self.queue then
     self:Finish()
     return
   end
@@ -85,7 +163,7 @@ function Scanner:Next()
   self.current.tries = 0
   self.current.cacheWaitStart = GetTime()
   if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, self.current.itemID) end
-  WC.UI:OnScanProgress(self.index - 1, self.total, self.current.itemID)
+  WC.UI:OnScanProgress(self.kind, self.index - 1, self.total, self.current.itemID, self.phase)
   self:TrySend(self.itemToken)
 end
 
@@ -177,7 +255,7 @@ function Scanner:OnCommodityResults(itemID)
   for i = 1, n do
     local info = C_AuctionHouse.GetCommoditySearchResultInfo(itemID, i)
     if info and info.unitPrice and info.quantity and info.quantity > 0 then
-      entries[#entries + 1] = { unit = info.unitPrice, qty = info.quantity }
+      entries[#entries + 1] = { info.unitPrice, info.quantity }
     end
   end
   self:Record(cur, entries)
@@ -200,34 +278,29 @@ function Scanner:OnItemResults(itemKey)
     if info and info.buyoutAmount and info.buyoutAmount > 0 and not info.containsOwnerItem then
       local qty = (info.quantity and info.quantity > 0) and info.quantity or 1
       -- buyoutAmount is per item (Auctionator treats it the same way)
-      entries[#entries + 1] = { unit = info.buyoutAmount, qty = qty }
+      entries[#entries + 1] = { info.buyoutAmount, qty }
     end
   end
   self:Record(cur, entries)
 end
 
--- Price for the quantity a crate needs, buying the cheapest listings first.
-function WC.PriceForQuantity(entries, need)
-  table.sort(entries, function(a, b) return a.unit < b.unit end)
-  local remain, cost, avail = need, 0, 0
-  for _, e in ipairs(entries) do
-    avail = avail + e.qty
-    if remain > 0 then
-      local take = math.min(remain, e.qty)
-      cost = cost + take * e.unit
-      remain = remain - take
-    end
-  end
-  local res = { need = need, avail = avail }
+-- Keep the cheapest listings (enough to cover the largest need) for later pricing.
+function WC.Summarize(entries)
+  table.sort(entries, function(a, b) return a[1] < b[1] end)
+  local res = { avail = 0 }
   if #entries == 0 then
     res.status = "none"
-  else
-    res.min = entries[1].unit
-    if remain > 0 then
-      res.status = "short"
-    else
-      res.status = "ok"
-      res.cost = cost
+    return res
+  end
+  res.status = "listed"
+  res.min = entries[1][1]
+  res.entries = {}
+  local covered = 0
+  for _, e in ipairs(entries) do
+    res.avail = res.avail + e[2]
+    if covered < KEEP_QTY and #res.entries < KEEP_ROWS then
+      res.entries[#res.entries + 1] = { e[1], e[2] }
+      covered = covered + e[2]
     end
   end
   return res
@@ -237,12 +310,13 @@ function Scanner:Record(cur, entries)
   if self.timer then self.timer:Cancel(); self.timer = nil end
   local res
   if entries == nil then
-    res = { status = "timeout", need = cur.need, avail = 0 }
+    res = { status = "timeout", avail = 0 }
   else
-    res = WC.PriceForQuantity(entries, cur.need)
+    res = WC.Summarize(entries)
   end
   res.time = time()
   self.results[cur.itemID] = res
+  if res.status == "listed" then self.listed = self.listed + 1 else self.missing = self.missing + 1 end
   WC.UI:Refresh()
   self:Next()
 end
@@ -251,9 +325,5 @@ function Scanner:Finish()
   self.active = false
   self.current = nil
   WC:SaveResults()
-  local listed, missing = 0, 0
-  for _, r in pairs(self.results) do
-    if r.status == "ok" or r.status == "short" then listed = listed + 1 else missing = missing + 1 end
-  end
-  WC.UI:OnScanDone(self.total, listed, missing, GetTime() - (self.startedAt or GetTime()))
+  WC.UI:OnScanDone(self.kind, self.total, self.listed, self.missing, GetTime() - (self.startedAt or GetTime()))
 end

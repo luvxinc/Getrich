@@ -159,4 +159,4 @@ WC.REP = {
   labelFavor = 50,
 }
 WC.DIPLOMACY_SPELL = 20599
-WC.FACTION_IDS = { Alliance = 2586, Horde = 2587 }   -- Season of Discovery IDs; checked at run time
+WC.FACTION_IDS = { Alliance = 2586, Horde = 2587 }   -- Azeroth Commerce Authority / Durotar Supply and Logistics (Wowhead)

@@ -11,13 +11,20 @@ do
   WC.VERSION = ok and v or nil
 end
 
+local RESULTS_FORMAT = 2   -- bump when the saved price format changes
+
 local DEFAULTS = {
-  autoScan = true,        -- scan when the Auction House opens
+  autoScan = true,        -- scan the open tab when the Auction House opens
+  tab = "crates",         -- "crates" (Merchant's Favor) or "writs" (reputation)
+  -- crates tab
   onlyMine = false,       -- only crates my level can open
   hideNoCrate = true,     -- ignore crates that nobody is selling
   hideNoMats = true,      -- ignore crates whose materials are all out of stock
-  mode = "favor",         -- "favor" = Merchant's Favor first, "rep" = reputation first
   perfRank = 0,           -- Legacy Performance Bonus rank (0-3)
+  -- reputation tab
+  hideNoWrit = true,      -- ignore writs nobody is selling
+  hideNoItem = true,      -- ignore writs whose requested item can't be bought
+  hideDone = true,        -- ignore writs already turned in today
   diplomatRank = 0,       -- Legacy Diplomat rank (0-5)
 }
 
@@ -42,10 +49,8 @@ function WC:ItemName(itemID)
   return WC.USE_CN_FALLBACK and d[2] or d[1]
 end
 
--- Crate name without the "Waylaid Crate:" prefix.
-function WC:CrateShortName(crate)
-  local name = ClientName(crate.id)
-  if not name then return WC.USE_CN_FALLBACK and crate.cn or crate.en end
+-- Name after the "Waylaid Crate:" / "Craftsman's Writ:" prefix.
+local function AfterColon(name)
   local p = name:find(": ", 1, true)
   if p then return name:sub(p + 2) end
   p = name:find("：", 1, true)
@@ -53,17 +58,32 @@ function WC:CrateShortName(crate)
   return name
 end
 
+function WC:WritTitle(w)
+  local name = ClientName(w.writ)
+  if name then return AfterColon(name) end
+  return w.en
+end
+
+function WC:CrateShortName(crate)
+  local name = ClientName(crate.id)
+  if not name then return WC.USE_CN_FALLBACK and crate.cn or crate.en end
+  return AfterColon(name)
+end
+
 function WC:SaveResults()
   if not WaylaidCrateDB then return end
   WaylaidCrateDB.results = WC.Scanner.results
-  WaylaidCrateDB.scannedAt = time()
+  WaylaidCrateDB.resultsFormat = RESULTS_FORMAT
+  WaylaidCrateDB.scannedAt = WaylaidCrateDB.scannedAt or {}
+  if type(WaylaidCrateDB.scannedAt) ~= "table" then WaylaidCrateDB.scannedAt = {} end
+  WaylaidCrateDB.scannedAt[WC.Scanner.kind or "crates"] = time()
 end
 
 -- ---------------------------------------------------------------------------
 -- bonuses
 
 function WC:DB() return WaylaidCrateDB or DEFAULTS end
-function WC:Mode() return WC:DB().mode == "rep" and "rep" or "favor" end
+function WC:Tab() return WC:DB().tab == "writs" and "writs" or "crates" end
 
 -- Human "Diplomacy" (+10% reputation): not in Forever's racial list, but check the spell anyway.
 function WC:HasDiplomacy()
@@ -104,35 +124,46 @@ function WC:Standing()
   return nil
 end
 
--- ---------------------------------------------------------------------------
--- evaluation
+-- has this writ been turned in today? (writs are once a day)
+function WC:WritDoneToday(questID)
+  local ok, done = pcall(function()
+    if C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted then return C_QuestLog.IsQuestFlaggedCompleted(questID) end
+    if IsQuestFlaggedCompleted then return IsQuestFlaggedCompleted(questID) end
+    return false
+  end)
+  return (ok and done) and true or false
+end
 
--- Evaluate every crate from the latest scan.
--- Favor: the cheapest material bundle the AH can fully supply is picked automatically.
--- Reputation: a filled crate gives 0; an empty crate + receipt (15 Favor) gives +50 after Friendly.
-function WC:Evaluate()
-  local R = WC.Scanner.results or {}
+local function ByScore(a, b)
+  if a.score and b.score then
+    if a.score ~= b.score then return a.score < b.score end
+    return a.key < b.key
+  end
+  if a.score then return true end
+  if b.score then return false end
+  if a.group ~= b.group then return a.group < b.group end
+  return a.key < b.key
+end
+
+-- ---------------------------------------------------------------------------
+-- crates: cost per Merchant's Favor
+
+-- For each crate the cheapest bundle the AH can fully supply is picked automatically.
+function WC:EvaluateCrates()
   local level = UnitLevel("player") or 0
   local favorMult = 1 + WC:FavorBonus()
-  local repMult = 1 + WC:RepBonus()
-  local mode = WC:Mode()
   local list = {}
   for _, crate in ipairs(WC.CRATES) do
-    local e = { crate = crate, opts = {}, locked = level < crate.lvl }
-    local cr = R[crate.id]
-    e.crateRes = cr
-    e.crateCost = (cr and cr.status == "ok") and cr.cost or nil
+    local e = { crate = crate, opts = {}, locked = level < crate.lvl, key = crate.id, group = crate.tier }
+    local crateCost, crateStatus = WC:CostFor(crate.id, 1)
+    e.crateCost, e.crateStatus = crateCost, crateStatus
     e.favorExp = crate.favor * favorMult
-    e.repFill = WC.REP.fill * repMult          -- always 0
-    e.repGain = WC.REP.empty * repMult         -- empty crate + receipt
-    local scannedAny = cr ~= nil
     local anyListed = false
     for j, opt in ipairs(crate.opts) do
-      local r = R[opt[1]]
-      if r then scannedAny = true; e.matsScanned = true end
-      if r and (r.status == "ok" or r.status == "short") then anyListed = true end
-      local cost = (r and r.status == "ok") and r.cost or nil
-      e.opts[j] = { itemID = opt[1], qty = opt[2], note = opt[3], res = r, cost = cost }
+      local cost, status, res = WC:CostFor(opt[1], opt[2])
+      if status then e.matsScanned = true end
+      if status == "ok" or status == "short" then anyListed = true end
+      e.opts[j] = { itemID = opt[1], qty = opt[2], note = opt[3], cost = cost, status = status, res = res }
       if cost and (not e.matCost or cost < e.matCost) then
         e.matCost = cost
         e.bestIdx = j
@@ -141,9 +172,8 @@ function WC:Evaluate()
     if e.crateCost and e.matCost then
       e.net = e.crateCost + e.matCost - crate.silver
       e.perFavor = math.max(e.net, 0) / e.favorExp
-      e.favorPerGold = e.net > 0 and e.favorExp / (e.net / 10000) or nil
       e.status = "ok"
-    elseif not scannedAny then
+    elseif not crateStatus and not e.matsScanned then
       e.status = "unscanned"
     elseif not e.crateCost then
       e.status = "nocrate"
@@ -152,53 +182,107 @@ function WC:Evaluate()
     else
       e.status = "nomats"
     end
+    e.score = e.perFavor
     list[#list + 1] = e
   end
-
-  -- The receipt costs 15 Favor; value it at the cheapest Favor you can make (crates you can open).
-  local bestPerFavor, bestAny
-  for _, e in ipairs(list) do
-    if e.perFavor then
-      if not bestAny or e.perFavor < bestAny then bestAny = e.perFavor end
-      if not e.locked and (not bestPerFavor or e.perFavor < bestPerFavor) then bestPerFavor = e.perFavor end
-    end
-  end
-  bestPerFavor = bestPerFavor or bestAny
-  WC.bestPerFavor = bestPerFavor
-  for _, e in ipairs(list) do
-    e.receiptGold = bestPerFavor and WC.REP.receiptFavor * bestPerFavor or nil
-    if e.crateCost then
-      e.repCost = e.crateCost + (e.receiptGold or 0)
-      e.perRep = e.repCost / e.repGain
-    end
-    e.score = (mode == "rep") and e.perRep or e.perFavor
-  end
-
-  table.sort(list, function(a, b)
-    if a.score and b.score then
-      if a.score ~= b.score then return a.score < b.score end
-      return a.crate.id < b.crate.id
-    end
-    if a.score then return true end
-    if b.score then return false end
-    if a.crate.tier ~= b.crate.tier then return a.crate.tier < b.crate.tier end
-    return a.crate.id < b.crate.id
-  end)
+  table.sort(list, ByScore)
   return list
 end
 
--- Apply the filter switches.
-function WC:Visible(list)
+function WC:VisibleCrates(list)
   local db = WC:DB()
-  local repMode = WC:Mode() == "rep"
   local out, rank = {}, 0
   for _, e in ipairs(list) do
     local show = true
     if db.onlyMine and e.locked then show = false end
-    -- crate was scanned but nobody sells it
-    if db.hideNoCrate and e.crateRes and not e.crateCost then show = false end
-    -- materials were scanned but no bundle can be fully bought (materials don't matter for reputation)
-    if not repMode and db.hideNoMats and e.matsScanned and not e.matCost then show = false end
+    -- crate was scanned but can't be bought
+    if db.hideNoCrate and e.crateStatus and not e.crateCost then show = false end
+    -- materials were scanned but no bundle can be fully bought
+    if db.hideNoMats and e.matsScanned and not e.matCost then show = false end
+    if show then
+      if e.score then rank = rank + 1; e.rank = rank else e.rank = nil end
+      out[#out + 1] = e
+    end
+  end
+  return out
+end
+
+-- cheapest Merchant's Favor you can make right now (crates you can open first)
+function WC:BestPerFavor()
+  local best, bestAny
+  for _, e in ipairs(WC:EvaluateCrates()) do
+    if e.perFavor then
+      if not bestAny or e.perFavor < bestAny then bestAny = e.perFavor end
+      if not e.locked and (not best or e.perFavor < best) then best = e.perFavor end
+    end
+  end
+  return best or bestAny
+end
+
+-- ---------------------------------------------------------------------------
+-- reputation: Craftsman's Writs (+ empty crate with a receipt)
+
+function WC:EvaluateWrits()
+  local repMult = 1 + WC:RepBonus()
+  local list = {}
+  for i, w in ipairs(WC.WRITS) do
+    local e = { writ = w, key = i, group = -w.rep }
+    e.writCost, e.writStatus, e.writRes = WC:CostFor(w.writ, 1)
+    e.itemCost, e.itemStatus, e.itemRes = WC:CostFor(w.item, w.qty)
+    e.repGain = w.rep * repMult
+    e.done = WC:WritDoneToday(w.quest)
+    if e.writCost and e.itemCost then
+      e.cost = e.writCost + e.itemCost
+      e.perRep = e.cost / e.repGain
+      e.status = "ok"
+    elseif not e.writStatus and not e.itemStatus then
+      e.status = "unscanned"
+    elseif not e.writCost then
+      e.status = "nowrit"
+    elseif e.itemStatus == "short" then
+      e.status = "short"
+    elseif e.itemStatus then
+      e.status = "noitem"
+    else
+      e.status = "itemunscanned"
+    end
+    e.score = e.perRep
+    list[#list + 1] = e
+  end
+
+  -- Empty crate + Forged Delivery Receipt (15 Favor, needs Friendly): +50 reputation.
+  -- Uses the cheapest crate on the AH and values the 15 Favor at your cheapest Favor price.
+  local cheapest, cheapestCrate
+  for _, c in ipairs(WC.CRATES) do
+    local cost = WC:CostFor(c.id, 1)
+    if cost and (not cheapest or cost < cheapest) then cheapest, cheapestCrate = cost, c end
+  end
+  if cheapest then
+    local perFavor = WC:BestPerFavor()
+    local e = { receipt = true, crate = cheapestCrate, key = 0, group = 0, status = "ok" }
+    e.writCost = cheapest                                   -- shown in the "writ" price column
+    e.itemCost = perFavor and WC.REP.receiptFavor * perFavor or nil
+    e.cost = cheapest + (e.itemCost or 0)
+    e.repGain = WC.REP.empty * repMult
+    e.perRep = e.cost / e.repGain
+    e.score = e.perRep
+    list[#list + 1] = e
+  end
+
+  table.sort(list, ByScore)
+  return list
+end
+
+function WC:VisibleWrits(list)
+  local db = WC:DB()
+  local out, rank = {}, 0
+  for _, e in ipairs(list) do
+    local show = true
+    if not e.receipt then
+      if db.hideNoWrit and e.writStatus and not e.writCost then show = false end
+      if db.hideNoItem and e.itemStatus and not e.itemCost then show = false end
+      if db.hideDone and e.done then show = false end
+    end
     if show then
       if e.score then rank = rank + 1; e.rank = rank else e.rank = nil end
       out[#out + 1] = e
@@ -224,6 +308,8 @@ SafeRegister("COMMODITY_SEARCH_RESULTS_UPDATED")
 SafeRegister("ITEM_SEARCH_RESULTS_UPDATED")
 SafeRegister("AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED")
 SafeRegister("PLAYER_LEVEL_UP")
+SafeRegister("QUEST_TURNED_IN")
+SafeRegister("UPDATE_FACTION")
 
 frame:SetScript("OnEvent", function(_, event, ...)
   if event == "ADDON_LOADED" then
@@ -233,14 +319,20 @@ frame:SetScript("OnEvent", function(_, event, ...)
     for k, v in pairs(DEFAULTS) do
       if WaylaidCrateDB[k] == nil then WaylaidCrateDB[k] = v end
     end
-    if type(WaylaidCrateDB.results) == "table" then
+    WaylaidCrateDB.mode = nil   -- removed in 1.3.0
+    if WaylaidCrateDB.resultsFormat == RESULTS_FORMAT and type(WaylaidCrateDB.results) == "table" then
       WC.Scanner.results = WaylaidCrateDB.results
+    else
+      WaylaidCrateDB.results, WaylaidCrateDB.scannedAt = nil, nil
     end
   elseif event == "PLAYER_LOGIN" then
     -- warm the item cache so names show in the client's language
     if C_Item and C_Item.RequestLoadItemDataByID then
       for itemID in pairs(WC.ITEMS) do pcall(C_Item.RequestLoadItemDataByID, itemID) end
-      for _, c in ipairs(WC.CRATES) do pcall(C_Item.RequestLoadItemDataByID, c.id) end
+      for _, w in ipairs(WC.WRITS) do
+        pcall(C_Item.RequestLoadItemDataByID, w.writ)
+        pcall(C_Item.RequestLoadItemDataByID, w.item)
+      end
     end
     WC.UI:Create()
   elseif event == "AUCTION_HOUSE_SHOW" then
@@ -248,7 +340,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
     WC.UI:ShowAtAuctionHouse()
     if WaylaidCrateDB and WaylaidCrateDB.autoScan then
       C_Timer.After(1.0, function()
-        if WC.ahOpen and not WC.Scanner.active then WC.Scanner:Start() end
+        if WC.ahOpen and not WC.Scanner.active then WC.Scanner:Start(WC:Tab()) end
       end)
     end
   elseif event == "AUCTION_HOUSE_CLOSED" then
@@ -261,7 +353,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
     WC.Scanner:OnItemResults(...)
   elseif event == "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED" then
     WC.Scanner:OnMessageDropped()
-  elseif event == "PLAYER_LEVEL_UP" then
+  elseif event == "PLAYER_LEVEL_UP" or event == "QUEST_TURNED_IN" or event == "UPDATE_FACTION" then
     C_Timer.After(0.5, function() WC.UI:Refresh() end)
   end
 end)
@@ -275,7 +367,15 @@ SlashCmdList.WAYLAIDCRATE = function(msg)
   msg = strtrim(string.lower(msg or ""))
   if msg == "scan" then
     WC.UI:Show()
-    WC.Scanner:Start()
+    WC.Scanner:Start(WC:Tab())
+  elseif msg == "scan writs" or msg == "writs" then
+    WC.UI:Show()
+    WC.UI:SelectTab("writs")
+    WC.Scanner:Start("writs")
+  elseif msg == "scan crates" or msg == "crates" then
+    WC.UI:Show()
+    WC.UI:SelectTab("crates")
+    WC.Scanner:Start("crates")
   elseif msg == "stop" then
     WC.Scanner:Stop(WC.L.STOP_MANUAL)
   else

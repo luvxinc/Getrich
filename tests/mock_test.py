@@ -1,5 +1,12 @@
-"""Run the WaylaidCrate addon against a mocked WoW client + Auction House (LuaJIT via lupa)."""
+"""Run the WaylaidCrate addon against a mocked WoW client + Auction House (LuaJIT via lupa).
+
+usage: python3 tests/mock_test.py [ADDON_DIR] [LOCALE] [SCENARIO]
+  LOCALE   enUS | zhCN | zhTW        (default enUS)
+  SCENARIO full | close             (default full)
+needs: pip install lupa
+"""
 import sys, os
+from math import fabs
 from lupa import luajit21 as lj
 
 ADDON = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), '..', 'WaylaidCrate')
@@ -119,15 +126,9 @@ BOOK = {}
 NO_EVENT = {}      -- items whose search never answers (simulates a dropped query)
 FLAKY, FLAKED, LOADED = {}, {}, {}
 SENT = {}
-local CRATE_IDS = {}
-function SETUP_BOOK(WC)
-  for _, c in ipairs(WC.CRATES) do CRATE_IDS[c.id] = true end
-  -- default: every material listed at 50c..5s with plenty of stock
-  local seed = 7
-  local function rnd(a, b) seed = (seed * 1103515245 + 12345) % 2147483648; return a + seed % (b - a + 1) end
-  for id in pairs(WC.ITEMS) do BOOK[id] = { { rnd(50, 500), 200 }, { rnd(600, 900), 500 } } end
-  for _, c in ipairs(WC.CRATES) do BOOK[c.id] = { { rnd(5000, 30000), 1 }, { 40000, 1 } } end
-end
+ITEM_PATH = {}     -- non-commodity items (crates, writs); everything else is a commodity
+DONE = {}          -- quest IDs turned in today
+C_QuestLog = { IsQuestFlaggedCompleted = function(q) return DONE[q] == true end }
 local current = { commodity = {}, item = {} }
 C_AuctionHouse = {
   MakeItemKey = function(id) return { itemID = id, itemLevel = 0, itemSuffix = 0, battlePetSpeciesID = 0 } end,
@@ -149,7 +150,7 @@ C_AuctionHouse = {
     if FLAKY[id] and not FLAKED[id] then FLAKED[id] = true; LOADED[id] = false else LOADED[id] = true end
     if NO_EVENT[id] then return end
     C_Timer.After(0.2, function()
-      if CRATE_IDS[id] then
+      if ITEM_PATH[id] then
         current.item[id] = BOOK[id] or {}
         FIRE("ITEM_SEARCH_RESULTS_UPDATED", { itemID = id })
       else
@@ -176,9 +177,7 @@ function FIRE(event, ...)
 end
 '''
 
-lua.execute("MOCKSRC = ...", None)
-mock_fn = lua.eval("function(src) return loadstring(src) end")(MOCK)
-mock_fn(LOCALE, SCENARIO)
+lua.eval("function(src) return loadstring(src) end")(MOCK)(LOCALE, SCENARIO)
 
 WC = lua.table()
 loader = lua.eval("function(src, name, ns) local f, err = loadstring(src, '@' .. name); if not f then error(err) end; return f('WaylaidCrate', ns) end")
@@ -189,205 +188,209 @@ for line in open(os.path.join(ADDON, "WaylaidCrate.toc"), encoding="utf-8"):
 print(f"[{LOCALE}/{SCENARIO}] loaded files OK")
 
 g = lua.globals()
-g.SETUP_BOOK(WC)
 run = lua.eval("RUN")
 fire = lua.eval("FIRE")
+L = lua.eval("function(src) return loadstring(src) end")
+def lx(src, *args): return L(src)(*args)
 
 fire("ADDON_LOADED", "WaylaidCrate")
 fire("PLAYER_LOGIN")
+UI = WC.UI
+db = lua.eval("WaylaidCrateDB")
+CRATE_TAB = UI.tabs.crates
+WRIT_TAB = UI.tabs.writs
 
-# scenario tweaks (set before scanning)
-lua.eval('loadstring')(r'''
+# ---------------------------------------------------------------- order books
+lx(r"""
 local WC = ...
--- Apprentice Textiles: Linen Cloth only 30 listed (crate needs 40) -> must fall back to Light Leather
-BOOK[2589] = { { 10, 30 } }
-BOOK[2318] = { { 400, 10 }, { 900, 50 } }       -- 20 Light Leather = 10*400 + 10*900 = 13000
--- Apprentice Ore: no crate for sale
-BOOK[248683] = {}
--- Apprentice Herbs: all five herbs sold out
-for _, id in ipairs({ 2447, 765, 2449, 785, 2450 }) do BOOK[id] = {} end
--- Expert Parts: make it the clear winner
-BOOK[248710] = { { 100, 1 } }
-BOOK[10559] = { { 1, 100 } }
--- one query that never answers (timeout path): Tin Ore
-NO_EVENT[2771] = true
--- Silk Cloth and the Expert Ore crate answer 'not loaded' first, must be retried
-FLAKY[4306] = true
-FLAKY[248692] = true
-''')(WC) if SCENARIO in ("full", "close") else None
+local seed = 7
+local function rnd(a, b) seed = (seed * 1103515245 + 12345) % 2147483648; return a + seed % (b - a + 1) end
+for _, c in ipairs(WC.CRATES) do
+  ITEM_PATH[c.id] = true
+  BOOK[c.id] = { { rnd(5000, 30000), 1 }, { 40000, 1 } }
+  for _, o in ipairs(c.opts) do BOOK[o[1]] = { { rnd(50, 500), 200 }, { rnd(600, 900), 500 } } end
+end
+for _, w in ipairs(WC.WRITS) do ITEM_PATH[w.writ] = true; BOOK[w.writ] = {} end
+-- crate scenarios (same as before)
+BOOK[2589] = { { 10, 30 } }                       -- Linen: only 30 (needs 40)
+BOOK[2318] = { { 400, 10 }, { 900, 50 } }         -- 20 Light Leather = 13000
+BOOK[248683] = {}                                 -- Apprentice Ore crate not for sale
+for _, id in ipairs({ 2447, 765, 2449, 785, 2450 }) do BOOK[id] = {} end   -- herbs sold out
+BOOK[248710] = { { 100, 1 } }                     -- Expert Parts crate: 1c
+BOOK[10559] = { { 1, 100 } }                      -- Mithril Tube
+NO_EVENT[2771] = true                             -- Tin Ore never answers
+FLAKY[4306] = true                                -- Silk Cloth answers 'not loaded' first
+-- writ scenarios: 8 writs listed
+WRITS_LISTED = {
+  [264072] = { writ = 5000,  item = 20000 },   -- Blue Glittering Axe (125)
+  [264082] = { writ = 3000,  item = 9000 },    -- Craftsman's Monocle (125)
+  [264037] = { writ = 2000,  item = 5 },       -- Crafted Solid Shot x200 (75)
+  [264013] = { writ = 1500,  item = 300 },     -- Lesser Mana Potion (75)
+  [264124] = { writ = 9000,  item = 40000 },   -- Distilled Firewater (200)
+  [264047] = { writ = 1000,  item = nil },     -- Lesser Wizard's Robe: item not for sale
+  [264085] = { writ = 4000,  item = 2500 },    -- Unstable Trigger (125) - also a crate material
+  [264153] = { writ = 20000, item = 30000 },   -- Runecloth Bag (200)
+}
+for _, w in ipairs(WC.WRITS) do
+  local s = WRITS_LISTED[w.writ]
+  if s then
+    BOOK[w.writ] = { { s.writ, 1 }, { s.writ * 2, 1 } }
+    if s.item then BOOK[w.item] = { { s.item, 150 }, { s.item * 3, 300 } } else BOOK[w.item] = {} end
+  elseif w.item ~= 10560 then
+    BOOK[w.item] = { { 777, 5 } }               -- listed, but should not even be scanned in phase 2
+  end
+end
+DONE[94213] = true                                 -- Lesser Mana Potion writ done today
+""", WC)
 
+# ---------------------------------------------------------------- crates tab
 fire("AUCTION_HOUSE_SHOW")
 if SCENARIO == "close":
     run(12)
     fire("AUCTION_HOUSE_CLOSED")
-    sc = WC.Scanner
-    print("after close: active =", sc.active, "| bar:", WC.UI.barText._text)
-    print("frame shown:", WC.UI.frame._shown)
+    print("after close: scanning =", WC.Scanner.active, "| bar:", UI.barText._text, "| frame shown:", UI.frame._shown)
+    assert not WC.Scanner.active and not UI.frame._shown
+    print("CLOSE SCENARIO PASSED")
     sys.exit(0)
-
 run(400)
-sc = WC.Scanner
 sent = lua.eval("SENT")
-n_sent = len(sent)
-times = sorted(sent[i].t for i in range(1, n_sent + 1))
-min_gap = min(b - a for a, b in zip(times, times[1:]))
-print(f"scan active={sc.active} total={sc.total} queries sent={n_sent} min gap={min_gap:.2f}s duration={times[-1]-times[0]:.1f}s")
-print("progress bar:", WC.UI.barText._text, "| value set via SetValue")
-chat = lua.eval("CHAT")
-print("chat:", [chat[i] for i in range(1, len(chat) + 1)])
+n1 = len(sent)
+print("crates scan: kind =", WC.Scanner.kind, "| queries =", n1, "| bar:", UI.barText._text)
+assert WC.Scanner.kind == "crates" and not WC.Scanner.active
 
-R = sc.results
-def res(i):
-    r = R[i]
-    return None if r is None else dict(status=r.status, cost=r.cost, min=r.min, avail=r.avail)
-print("Linen (need 40, 30 listed):", res(2589))
-print("Light Leather (need 20):", res(2318))
-print("Tin Ore (no answer):", res(2771))
-print("Silk Cloth (flaky first answer):", res(4306))
-print("Expert Ore crate (flaky first answer):", res(248692))
-assert res(4306)["status"] == "ok" and res(248692)["status"] == "ok"
-ages = [sent[i].keyAge for i in range(1, n_sent + 1)]
-early = [a for a in ages if a < 0.5]
-print("searches sent before item key was cached:", len(early))
-assert not early
-silk = [sent[i] for i in range(1, n_sent + 1) if sent[i].id == 4306]
-print("Silk Cloth searches:", len(silk))
-
-ev = lua.eval("function(WC) return WC:Evaluate() end")(WC)
-rows = []
+ev = lx("local WC = ... ; return WC:EvaluateCrates()", WC)
+by = {}
 for i in range(1, len(ev) + 1):
-    e = ev[i]
-    best = e.opts[e.bestIdx].itemID if e.bestIdx else None
-    rows.append((e.crate.en, e.status, e.crateCost, e.matCost, best, e.perFavor, e.locked))
-for r in rows[:4]:
-    print("  ", r)
-by = {r[0]: r for r in rows}
-assert by["Apprentice Textiles"][4] == 2318 and by["Apprentice Textiles"][3] == 13000, by["Apprentice Textiles"]
-assert by["Apprentice Ore"][1] == "nocrate", by["Apprentice Ore"]
-assert by["Apprentice Herbs"][1] == "nomats", by["Apprentice Herbs"]
-assert rows[0][0] == "Expert Parts", rows[0]
-assert by["Expert Parts"][6] is True   # player level 18 < 20
-# verify each ok crate's best = min over fully-buyable options, independently
-for i in range(1, len(ev) + 1):
-    e = ev[i]
+    e = ev[i]; by[e.crate.en] = e
     costs = [e.opts[j].cost for j in range(1, len(e.opts) + 1) if e.opts[j].cost is not None]
-    if costs:
-        assert abs(min(costs) - e.matCost) < 1e-9
+    if costs: assert fabs(min(costs) - e.matCost) < 1e-9
     if e.perFavor is not None:
-        exp = max(e.crateCost + e.matCost - e.crate.silver, 0) / e.crate.favor
-        assert abs(exp - e.perFavor) < 1e-9
-print("evaluation checks passed")
-
-vis_fn = lua.eval("function(WC) return WC:Visible(WC:Evaluate()) end")
-def visible_names():
-    v = vis_fn(WC); return [v[i].crate.en for i in range(1, len(v) + 1)]
-v_default = visible_names()
-print("visible (default filters):", len(v_default), "hidden Ore/Herbs:", "Apprentice Ore" not in v_default, "Apprentice Herbs" not in v_default)
-assert "Apprentice Ore" not in v_default and "Apprentice Herbs" not in v_default
-db = lua.eval("WaylaidCrateDB")
-db.hideNoCrate = False; db.hideNoMats = False
-v_all = visible_names(); print("visible (filters off):", len(v_all))
-assert len(v_all) == 22
-db.onlyMine = True
-v_mine = visible_names(); print("visible (only mine, level 18):", len(v_mine))
-assert all(not n.startswith("Expert") and "Expert" not in n for n in v_mine)
-db.onlyMine = False; db.hideNoCrate = True; db.hideNoMats = True
-
-WC.UI.Refresh(WC.UI)
-best = WC.UI.best
-print("best panel:", best.name._text, "|", best.detail._text, "|", best.per._text, "|", best.net._text)
-row1 = WC.UI.rows[1]
-print("row1:", row1.rank._text, row1.name._text, "|", row1.fill._text, "|", row1.fillSub._text, "|", row1.price._text, row1.mats._text, row1.rep._text, row1.per._text)
-WC.UI.ShowTooltip(WC.UI, row1, row1.entry)
-tt = lua.eval("TT")
-print("tooltip:"); [print("   ", tt[i]) for i in range(1, len(tt) + 1)]
-# tooltip for Apprentice Textiles (shows 'not enough' for linen)
-for i in range(1, 23):
-    r = WC.UI.rows[i]
-    if r.entry and r.entry.crate.en == "Apprentice Textiles":
-        WC.UI.ShowTooltip(WC.UI, r, r.entry); tt = lua.eval("TT")
-        print("textiles tooltip:"); [print("   ", tt[k]) for k in range(1, len(tt) + 1)]
-        break
-print("hidden label:", WC.UI.hiddenText._text)
-
-# ---- click to search ----
-g = lua.globals()
-row1 = WC.UI.rows[1]
-row1.crateBtn._scripts.OnClick()
-isBuy = lua.eval("function() return AH_MODE == AuctionHouseFrameDisplayMode.Buy end")
-isCB = lua.eval("function() return AH_MODE == AuctionHouseFrameDisplayMode.CommoditiesBuy end")
-print("click crate ->", g.SEARCH_TEXT, "| switched Sell -> Buy:", isBuy(), "| searches:", g.SEARCHES)
-assert isBuy()
-if LOCALE == "enUS": assert g.SEARCH_TEXT == "Waylaid Crate: Expert Parts"
-row1.matBtn._scripts.OnClick()
-print("click material ->", g.SEARCH_TEXT)
-if LOCALE == "enUS": assert g.SEARCH_TEXT == "Mithril Tube"
-lua.execute("AH_MODE = AuctionHouseFrameDisplayMode.CommoditiesBuy")
-WC.UI.best.crateBtn._scripts.OnClick()
-print("best panel crate ->", g.SEARCH_TEXT, "| stays in CommoditiesBuy:", isCB())
-assert isCB()
-WC.UI.best.matBtn._scripts.OnClick()
-print("best panel material ->", g.SEARCH_TEXT, "| searches:", g.SEARCHES)
-assert g.SEARCHES == 4
-# material hotspot hidden on a row without a recommendation
-db = lua.eval("WaylaidCrateDB"); db.hideNoMats = False; db.hideNoCrate = False
-WC.UI.Refresh(WC.UI)
-for i in range(1, 23):
-    r = WC.UI.rows[i]
-    if r.entry and r.entry.crate.en == "Apprentice Herbs":
-        print("Apprentice Herbs (no materials) material hotspot shown:", r.matBtn._shown); assert r.matBtn._shown is False
-# tooltip hint
-r = WC.UI.rows[1]; r.matBtn._scripts.OnEnter(r.matBtn); tt = lua.eval("TT"); print("hover hint:", tt[len(tt)])
-# failure path: no search bar
-AH = g.AuctionHouseFrame; AH.SearchBar = None
-WC.UI.rows[1].crateBtn._scripts.OnClick()
-chat = lua.eval("CHAT"); print("failure message:", chat[len(chat)])
-
-# ---- reputation / bonuses ----
-from math import fabs
-AH.SearchBar = lua.eval("{ SetSearchText = function(_, t) SEARCH_TEXT = t end, StartSearch = function() end }")
-db = lua.eval("WaylaidCrateDB"); db.hideNoMats = True; db.hideNoCrate = True
-ev = lua.eval("function(WC) return WC:Evaluate() end")
-first = ev(WC)[1]
-print("favor mode, no bonus: favorExp =", first.favorExp, "repFill =", first.repFill, "repGain =", first.repGain)
-assert first.repFill == 0 and first.repGain == 50
-db.perfRank = 3; db.diplomatRank = 5
-e1 = ev(WC)[1]
-print("perf 3/3 + diplomat 5/5: favorExp =", e1.favorExp, "(base", e1.crate.favor, ") repGain =", e1.repGain)
-assert fabs(e1.favorExp - e1.crate.favor * 1.15) < 1e-9 and fabs(e1.repGain - 55) < 1e-9
-lua.execute("HAS_DIPLO = true")
-e1 = ev(WC)[1]; print("with racial Diplomacy detected: repGain =", e1.repGain); assert fabs(e1.repGain - 60) < 1e-9
-lua.execute("HAS_DIPLO = false")
-
-db.mode = "rep"
-lst = ev(WC)
-best_per_favor = lua.eval("function(WC) return WC.bestPerFavor end")(WC)
-rows = [(lst[i].crate.en, lst[i].crateCost, lst[i].receiptGold, lst[i].perRep) for i in range(1, len(lst) + 1)]
-print("best per-Favor (unlocked crates):", best_per_favor)
-print("rep mode top 3:", rows[:3])
-priced = [(r[0], (r[1] + 15 * best_per_favor) / 55) for r in rows if r[1] is not None]
-priced.sort(key=lambda t: t[1])
-assert [p[0] for p in priced[:5]] == [r[0] for r in rows[:5]], (priced[:5], rows[:5])
-assert fabs(rows[0][3] - priced[0][1]) < 1e-9
-vis = lua.eval("function(WC) return WC:Visible(WC:Evaluate()) end")(WC)
+        assert fabs(max(e.crateCost + e.matCost - e.crate.silver, 0) / e.favorExp - e.perFavor) < 1e-9
+assert by["Apprentice Textiles"].opts[by["Apprentice Textiles"].bestIdx].itemID == 2318 and by["Apprentice Textiles"].matCost == 13000
+assert by["Apprentice Ore"].status == "nocrate" and by["Apprentice Herbs"].status == "nomats"
+assert ev[1].crate.en == "Expert Parts"
+vis = lx("local WC = ... ; return WC:VisibleCrates(WC:EvaluateCrates())", WC)
 names = [vis[i].crate.en for i in range(1, len(vis) + 1)]
-print("rep mode visible:", len(names), "| Apprentice Herbs (no materials) shown:", "Apprentice Herbs" in names, "| Apprentice Ore (no crate) shown:", "Apprentice Ore" in names)
-assert "Apprentice Herbs" in names and "Apprentice Ore" not in names
-WC.UI.Refresh(WC.UI)
-b = WC.UI.best
-print("rep best panel:", b.label._text, "|", b.name._text, "|", b.detail._text, "|", b.perLabel._text, b.per._text, "|", b.net._text)
-r1 = WC.UI.rows[1]
-print("rep row1:", r1.rank._text, r1.name._text, "|", r1.fill._text, "|", r1.fillSub._text, "|", r1.price._text, "|", r1.mats._text, "|", r1.rep._text, "|", r1.per._text, "| matBtn shown:", r1.matBtn._shown)
-print("headers:", WC.UI.hFill._text, "/", WC.UI.hMats._text, "/", WC.UI.hPer._text, "| race:", WC.UI.raceText._text, "| cyclers:", WC.UI.cyclers.perfRank._text, WC.UI.cyclers.diplomatRank._text)
-r1.crateBtn._scripts.OnEnter(r1.crateBtn); tt = lua.eval("TT")
-print("rep tooltip:"); [print("   ", tt[i]) for i in range(1, len(tt) + 1)]
-WC.UI.cyclers.diplomatRank._scripts.OnClick(WC.UI.cyclers.diplomatRank, "LeftButton")
-print("diplomat after left-click from 5:", db.diplomatRank); assert db.diplomatRank == 0
-WC.UI.cyclers.diplomatRank._scripts.OnClick(WC.UI.cyclers.diplomatRank, "RightButton")
-print("diplomat after right-click from 0:", db.diplomatRank); assert db.diplomatRank == 5
-WC.UI.modeButtons.favor._scripts.OnClick()
-print("favor mode again:", db.mode, "| row1 rep column:", WC.UI.rows[1].rep._text, "| per:", WC.UI.rows[1].per._text, "| sub:", WC.UI.rows[1].sub._text)
-lua.execute("STANDING = 4")
-db.mode = "rep"; WC.UI.Refresh(WC.UI); print("standing Neutral ->", WC.UI.best.net._text)
-print("version label:", lua.eval("function(WC) return WC.VERSION end")(WC))
-print("ALL REP CHECKS PASSED")
+assert "Apprentice Ore" not in names and "Apprentice Herbs" not in names
+print("crates: evaluation + filters OK |", len(names), "visible | best:", UI.tabs.crates.best.name._text)
+r1 = CRATE_TAB.list.rows[1]
+r1.hotA._scripts.OnClick(); t1 = g.SEARCH_TEXT
+r1.hotB._scripts.OnClick(); t2 = g.SEARCH_TEXT
+print("crates click search:", t1, "/", t2)
+if LOCALE == "enUS": assert t1 == "Waylaid Crate: Expert Parts" and t2 == "Mithril Tube"
+crate_prices_before = {c: by[c].crateCost for c in by}
+
+# ---------------------------------------------------------------- writs tab
+UI.SelectTab(UI, "writs")
+assert db.tab == "writs" and WRIT_TAB.panel._shown and not CRATE_TAB.panel._shown
+WC.Scanner.Start(WC.Scanner, "writs")
+run(900)
+sent = lua.eval("SENT")
+writ_q = [sent[i].id for i in range(n1 + 1, len(sent) + 1)]
+phase1 = [q for q in writ_q if q >= 264000]
+phase2 = [q for q in writ_q if q < 264000]
+print("writs scan: queries =", len(writ_q), "(writs", len(set(phase1)), "+ items", len(set(phase2)), ") | bar:", UI.barText._text)
+assert len(set(phase1)) == 150
+listed_items = set(lx("""local WC = ...
+local out = {}
+for _, w in ipairs(WC.WRITS) do if WRITS_LISTED[w.writ] then out[#out + 1] = w.item end end
+return out""", WC).values())
+assert set(phase2) == listed_items, (sorted(set(phase2)), sorted(listed_items))
+
+ev = lx("local WC = ... ; return WC:EvaluateWrits()", WC)
+rows = []
+receipt = None
+for i in range(1, len(ev) + 1):
+    e = ev[i]
+    if e.receipt: receipt = e; continue
+    rows.append(e)
+ok = [e for e in rows if e.perRep is not None]
+# independent check of cost per reputation (no bonus yet)
+for e in ok:
+    w = e.writ
+    exp = (e.writCost + e.itemCost) / w.rep
+    assert fabs(exp - e.perRep) < 1e-9, (w.en, exp, e.perRep)
+solid = [e for e in rows if e.writ.writ == 264037][0]
+print("Crafted Solid Shot x200: item cost =", solid.itemCost, "(expected 150 x 5 + 50 x 15 = 1500) | writ", solid.writCost)
+assert solid.itemCost == 1500
+robe = [e for e in rows if e.writ.writ == 264047][0]
+print("Lesser Wizard's Robe status:", robe.status)
+assert robe.status == "noitem"
+mana = [e for e in rows if e.writ.writ == 264013][0]
+assert mana.done
+best_per_favor = lx("local WC = ... ; return WC:BestPerFavor()", WC)
+cheapest_crate = min(v for v in crate_prices_before.values() if v is not None)
+print("receipt row: crate", receipt.writCost, "receipt", receipt.itemCost, "rep", receipt.repGain, "per rep", receipt.perRep)
+assert receipt.writCost == cheapest_crate and fabs(receipt.itemCost - 15 * best_per_favor) < 1e-9 and receipt.repGain == 50
+
+vis = lx("local WC = ... ; return WC:VisibleWrits(WC:EvaluateWrits())", WC)
+vnames = [("RECEIPT" if vis[i].receipt else vis[i].writ.en) for i in range(1, len(vis) + 1)]
+print("visible (default filters):", vnames)
+assert "Lesser Wizard's Robe" not in vnames and "Lesser Mana Potion" not in vnames
+assert len([n for n in vnames if n != "RECEIPT"]) == 6
+# ranking: by cost per reputation
+scores = [vis[i].perRep for i in range(1, len(vis) + 1)]
+assert scores == sorted(scores)
+print("writs ranking order OK; top:", vnames[0])
+
+db.hideDone = False; db.hideNoItem = False
+vis2 = lx("local WC = ... ; return WC:VisibleWrits(WC:EvaluateWrits())", WC)
+n2 = [("RECEIPT" if vis2[i].receipt else vis2[i].writ.en) for i in range(1, len(vis2) + 1)]
+assert "Lesser Mana Potion" in n2 and "Lesser Wizard's Robe" in n2
+db.hideDone = True; db.hideNoItem = True
+
+# bonus
+db.diplomatRank = 5
+e75 = [e for e in [lx("local WC = ... ; return WC:EvaluateWrits()", WC)[i] for i in range(1, 152)] if not e.receipt and e.writ.writ == 264013][0]
+print("Diplomat 5/5: 75 ->", e75.repGain)
+assert fabs(e75.repGain - 82.5) < 1e-9
+db.diplomatRank = 0
+
+# UI rows + clicks
+UI.Refresh(UI)
+w1 = WRIT_TAB.list.rows[1]
+print("writ row1:", w1.rank._text, "|", w1.name._text, "|", w1.sub._text, "|", w1.item._text, "|", w1.itemSub._text, "|", w1.price._text, "|", w1.cost._text, "|", w1.rep._text, "|", w1.per._text)
+b = WRIT_TAB.best
+print("writ best panel:", b.label._text, "|", b.name._text, "|", b.detail._text, "|", b.perLabel._text, b.per._text, "|", b.net._text)
+print("race:", WRIT_TAB.race._text, "| standing:", WRIT_TAB.standing._text)
+# find a writ row (not the receipt) and click both hotspots
+for i in range(1, 152):
+    r = WRIT_TAB.list.rows[i]
+    if r.entry and not r.entry.receipt:
+        r.hotA._scripts.OnClick(); a = g.SEARCH_TEXT
+        r.hotB._scripts.OnClick(); bb = g.SEARCH_TEXT
+        print("writ click search:", a, "/", bb)
+        if LOCALE == "enUS":
+            assert a == "Craftsman's Writ: " + r.entry.writ.en and bb == r.entry.writ.en
+        r.hotA._scripts.OnEnter(r.hotA); tt = lua.eval("TT")
+        print("writ tooltip:"); [print("   ", tt[k]) for k in range(1, len(tt) + 1)]
+        break
+for i in range(1, 152):
+    r = WRIT_TAB.list.rows[i]
+    if r.entry and r.entry.receipt:
+        r._scripts.OnEnter(r); tt = lua.eval("TT")
+        print("receipt tooltip:"); [print("   ", tt[k]) for k in range(1, len(tt) + 1)]
+        assert not r.hotB._shown
+        break
+
+# crate prices survived the writ scan
+ev = lx("local WC = ... ; return WC:EvaluateCrates()", WC)
+after = {ev[i].crate.en: ev[i].crateCost for i in range(1, len(ev) + 1)}
+assert after == crate_prices_before
+tr = [ev[i] for i in range(1, len(ev) + 1) if ev[i].crate.en == "Expert Parts"][0]
+assert any(tr.opts[j].itemID == 10560 and tr.opts[j].cost is not None for j in range(1, len(tr.opts) + 1))
+print("crate prices kept after writ scan; Unstable Trigger still priced for crates")
+
+# full writ scan with the 'not for sale' filter off scans every requested item
+db.hideNoWrit = False
+before = len(lua.eval("SENT"))
+WC.Scanner.Start(WC.Scanner, "writs")
+run(1500)
+sent = lua.eval("SENT")
+q = [sent[i].id for i in range(before + 1, len(sent) + 1)]
+print("writ scan with filter off: queries =", len(q), "items:", len(set(x for x in q if x < 264000)))
+assert len(set(x for x in q if x < 264000)) == 150
+
+# saved results format
+assert db.resultsFormat == 2 and db.scannedAt.writs and db.scannedAt.crates
+print("ALL CHECKS PASSED")

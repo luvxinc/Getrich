@@ -1,16 +1,19 @@
 ## Interface: 16001
 ## Title: Waylaid Crate
-## Title-zhCN: Waylaid Crate 箱子性价比
-## Title-zhTW: Waylaid Crate 箱子性價比
-## Notes: Scans the Auction House for Waylaid Crates and their materials, picks the cheapest fill and ranks crates by cost per Merchant's Favor.
-## Notes-zhCN: 扫描拍卖行里的 Waylaid Crate 和材料价格，自动选出最便宜的填法，按每 Merchant's Favor 成本排名。
-## Notes-zhTW: 掃描拍賣場裡的 Waylaid Crate 和材料價格，自動選出最便宜的填法，按每 Merchant's Favor 成本排名。
-## Version: 1.2.0
+## Title-zhCN: Waylaid Crate 性价比
+## Title-zhTW: Waylaid Crate 性價比
+## Notes: Scans the Auction House to rank Waylaid Crates by cost per Merchant's Favor and Craftsman's Writs by cost per reputation point.
+## Notes-zhCN: 扫描拍卖行：箱子按每 Merchant's Favor 成本排名，Craftsman's Writ 按每点声望成本排名。
+## Notes-zhTW: 掃描拍賣場：箱子按每 Merchant's Favor 成本排名，Craftsman's Writ 按每點聲望成本排名。
+## Version: 1.3.0
 ## IconTexture: Interface\Icons\INV_Crate_07
 ## SavedVariables: WaylaidCrateDB
 
 Locale.lua
 Data.lua
+Writs.lua
 Scanner.lua
 UI.lua
+UICrates.lua
+UIWrits.lua
 Core.lua
