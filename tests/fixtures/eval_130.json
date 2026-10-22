@@ -1,0 +1,4113 @@
+{
+ "after_crates": {
+  "crates": [
+   {
+    "best": 10559,
+    "crateCost": 100,
+    "crateStatus": "ok",
+    "id": 248710,
+    "locked": false,
+    "matCost": 5,
+    "net": -1395,
+    "perFavor": 0,
+    "status": "ok"
+   },
+   {
+    "best": 2997,
+    "crateCost": 5649,
+    "crateStatus": "ok",
+    "id": 248705,
+    "locked": false,
+    "matCost": 468,
+    "net": 5117,
+    "perFavor": 255.85,
+    "status": "ok"
+   },
+   {
+    "best": 4625,
+    "crateCost": 7004,
+    "crateStatus": "ok",
+    "id": 248691,
+    "locked": false,
+    "matCost": 1690,
+    "net": 7944,
+    "perFavor": 529.6,
+    "status": "ok"
+   },
+   {
+    "best": 4236,
+    "crateCost": 23611,
+    "crateStatus": "ok",
+    "id": 248708,
+    "locked": false,
+    "matCost": 188,
+    "net": 22299,
+    "perFavor": 743.3,
+    "status": "ok"
+   },
+   {
+    "best": 11082,
+    "crateCost": 7639,
+    "crateStatus": "ok",
+    "id": 248689,
+    "locked": false,
+    "matCost": 464,
+    "net": 7603,
+    "perFavor": 760.3,
+    "status": "ok"
+   },
+   {
+    "best": 3355,
+    "crateCost": 7379,
+    "crateStatus": "ok",
+    "id": 248686,
+    "locked": false,
+    "matCost": 1030,
+    "net": 7909,
+    "perFavor": 790.9,
+    "status": "ok"
+   },
+   {
+    "best": 4382,
+    "crateCost": 17777,
+    "crateStatus": "ok",
+    "id": 248707,
+    "locked": false,
+    "matCost": 264,
+    "net": 17041,
+    "perFavor": 852.05,
+    "status": "ok"
+   },
+   {
+    "best": 3859,
+    "crateCost": 23978,
+    "crateStatus": "ok",
+    "id": 248709,
+    "locked": false,
+    "matCost": 4095,
+    "net": 26573,
+    "perFavor": 885.766667,
+    "status": "ok"
+   },
+   {
+    "best": 3575,
+    "crateCost": 21894,
+    "crateStatus": "ok",
+    "id": 248706,
+    "locked": false,
+    "matCost": 1980,
+    "net": 22874,
+    "perFavor": 1143.7,
+    "status": "ok"
+   },
+   {
+    "best": 11135,
+    "crateCost": 19469,
+    "crateStatus": "ok",
+    "id": 248694,
+    "locked": false,
+    "matCost": 708,
+    "net": 19427,
+    "perFavor": 1295.133333,
+    "status": "ok"
+   },
+   {
+    "best": 2841,
+    "crateCost": 13334,
+    "crateStatus": "ok",
+    "id": 248703,
+    "locked": false,
+    "matCost": 1140,
+    "net": 13974,
+    "perFavor": 1397.4,
+    "status": "ok"
+   },
+   {
+    "best": 2592,
+    "crateCost": 5719,
+    "crateStatus": "ok",
+    "id": 248688,
+    "locked": false,
+    "matCost": 9060,
+    "net": 14279,
+    "perFavor": 1427.9,
+    "status": "ok"
+   },
+   {
+    "best": 2775,
+    "crateCost": 15168,
+    "crateStatus": "ok",
+    "id": 248687,
+    "locked": false,
+    "matCost": 670,
+    "net": 15338,
+    "perFavor": 1533.8,
+    "status": "ok"
+   },
+   {
+    "best": 4231,
+    "crateCost": 15361,
+    "crateStatus": "ok",
+    "id": 248702,
+    "locked": false,
+    "matCost": 794,
+    "net": 15655,
+    "perFavor": 1565.5,
+    "status": "ok"
+   },
+   {
+    "best": 3821,
+    "crateCost": 24774,
+    "crateStatus": "ok",
+    "id": 248690,
+    "locked": false,
+    "matCost": 1140,
+    "net": 25164,
+    "perFavor": 1677.6,
+    "status": "ok"
+   },
+   {
+    "best": 2776,
+    "crateCost": 26503,
+    "crateStatus": "ok",
+    "id": 248692,
+    "locked": false,
+    "matCost": 1210,
+    "net": 26963,
+    "perFavor": 1797.533333,
+    "status": "ok"
+   },
+   {
+    "best": 4234,
+    "crateCost": 23755,
+    "crateStatus": "ok",
+    "id": 248693,
+    "locked": false,
+    "matCost": 8720,
+    "net": 31725,
+    "perFavor": 2115,
+    "status": "ok"
+   },
+   {
+    "best": 4363,
+    "crateCost": 23487,
+    "crateStatus": "ok",
+    "id": 248704,
+    "locked": false,
+    "matCost": 520,
+    "net": 23507,
+    "perFavor": 2350.7,
+    "status": "ok"
+   },
+   {
+    "best": 11084,
+    "crateCost": 22056,
+    "crateStatus": "ok",
+    "id": 248685,
+    "locked": false,
+    "matCost": 222,
+    "net": 22028,
+    "perFavor": 4405.6,
+    "status": "ok"
+   },
+   {
+    "best": 2318,
+    "crateCost": 21832,
+    "crateStatus": "ok",
+    "id": 248684,
+    "locked": false,
+    "matCost": 13000,
+    "net": 34582,
+    "perFavor": 6916.4,
+    "status": "ok"
+   },
+   {
+    "best": false,
+    "crateCost": 22210,
+    "crateStatus": "ok",
+    "id": 248682,
+    "locked": false,
+    "status": "nomats"
+   },
+   {
+    "best": 2770,
+    "crateStatus": "none",
+    "id": 248683,
+    "locked": false,
+    "matCost": 1740,
+    "status": "nocrate"
+   }
+  ],
+  "writs": [
+   {
+    "cost": 100,
+    "done": false,
+    "id": 0,
+    "itemCost": 0,
+    "perRep": 2,
+    "receipt": true,
+    "repGain": 50,
+    "status": "ok",
+    "writCost": 100
+   },
+   {
+    "done": false,
+    "id": 264124,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264119,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264117,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264121,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264120,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264118,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264122,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264123,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264116,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264132,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264130,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264133,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264131,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264129,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264128,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264127,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264126,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264125,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264139,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264137,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264138,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264135,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264136,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264134,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264141,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264142,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264140,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264148,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264151,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264144,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264149,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264150,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264146,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264145,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264147,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264143,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264157,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264156,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264159,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264153,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264154,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264158,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264160,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264155,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264152,
+    "receipt": false,
+    "repGain": 200,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264060,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264066,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264063,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264056,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264065,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264061,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264057,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264058,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264062,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264059,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264064,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264067,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264072,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264074,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264078,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264079,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264069,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264073,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264071,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264075,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264068,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264070,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264077,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264076,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264081,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264084,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264082,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264091,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264087,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264086,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264083,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264089,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264080,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264090,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264088,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264085,
+    "itemCost": 2500,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264100,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264101,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264092,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264094,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264093,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264099,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264097,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264098,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264103,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264102,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264095,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264096,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264110,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264114,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264106,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264115,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264108,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264104,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264112,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264111,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264105,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264107,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264109,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264113,
+    "receipt": false,
+    "repGain": 125,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264019,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264018,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264016,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264011,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264012,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264015,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": true,
+    "id": 264013,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264017,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264014,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264027,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264021,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264028,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264026,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264024,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264022,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264020,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264025,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264023,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264036,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264037,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264030,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264035,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264032,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264031,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264029,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264033,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264034,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264045,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264044,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264041,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264039,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264038,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264043,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264040,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264042,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264046,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264049,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264048,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264053,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264054,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264047,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264051,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264052,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264050,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   },
+   {
+    "done": false,
+    "id": 264055,
+    "receipt": false,
+    "repGain": 75,
+    "status": "unscanned"
+   }
+  ]
+ },
+ "after_writs": {
+  "crates": [
+   {
+    "best": 10559,
+    "crateCost": 100,
+    "crateStatus": "ok",
+    "id": 248710,
+    "locked": false,
+    "matCost": 5,
+    "net": -1395,
+    "perFavor": 0,
+    "status": "ok"
+   },
+   {
+    "best": 2997,
+    "crateCost": 5649,
+    "crateStatus": "ok",
+    "id": 248705,
+    "locked": false,
+    "matCost": 468,
+    "net": 5117,
+    "perFavor": 255.85,
+    "status": "ok"
+   },
+   {
+    "best": 4625,
+    "crateCost": 7004,
+    "crateStatus": "ok",
+    "id": 248691,
+    "locked": false,
+    "matCost": 1690,
+    "net": 7944,
+    "perFavor": 529.6,
+    "status": "ok"
+   },
+   {
+    "best": 4236,
+    "crateCost": 23611,
+    "crateStatus": "ok",
+    "id": 248708,
+    "locked": false,
+    "matCost": 188,
+    "net": 22299,
+    "perFavor": 743.3,
+    "status": "ok"
+   },
+   {
+    "best": 11082,
+    "crateCost": 7639,
+    "crateStatus": "ok",
+    "id": 248689,
+    "locked": false,
+    "matCost": 464,
+    "net": 7603,
+    "perFavor": 760.3,
+    "status": "ok"
+   },
+   {
+    "best": 3355,
+    "crateCost": 7379,
+    "crateStatus": "ok",
+    "id": 248686,
+    "locked": false,
+    "matCost": 1030,
+    "net": 7909,
+    "perFavor": 790.9,
+    "status": "ok"
+   },
+   {
+    "best": 4382,
+    "crateCost": 17777,
+    "crateStatus": "ok",
+    "id": 248707,
+    "locked": false,
+    "matCost": 264,
+    "net": 17041,
+    "perFavor": 852.05,
+    "status": "ok"
+   },
+   {
+    "best": 3859,
+    "crateCost": 23978,
+    "crateStatus": "ok",
+    "id": 248709,
+    "locked": false,
+    "matCost": 4095,
+    "net": 26573,
+    "perFavor": 885.766667,
+    "status": "ok"
+   },
+   {
+    "best": 3575,
+    "crateCost": 21894,
+    "crateStatus": "ok",
+    "id": 248706,
+    "locked": false,
+    "matCost": 1980,
+    "net": 22874,
+    "perFavor": 1143.7,
+    "status": "ok"
+   },
+   {
+    "best": 11135,
+    "crateCost": 19469,
+    "crateStatus": "ok",
+    "id": 248694,
+    "locked": false,
+    "matCost": 708,
+    "net": 19427,
+    "perFavor": 1295.133333,
+    "status": "ok"
+   },
+   {
+    "best": 2841,
+    "crateCost": 13334,
+    "crateStatus": "ok",
+    "id": 248703,
+    "locked": false,
+    "matCost": 1140,
+    "net": 13974,
+    "perFavor": 1397.4,
+    "status": "ok"
+   },
+   {
+    "best": 2592,
+    "crateCost": 5719,
+    "crateStatus": "ok",
+    "id": 248688,
+    "locked": false,
+    "matCost": 9060,
+    "net": 14279,
+    "perFavor": 1427.9,
+    "status": "ok"
+   },
+   {
+    "best": 2775,
+    "crateCost": 15168,
+    "crateStatus": "ok",
+    "id": 248687,
+    "locked": false,
+    "matCost": 670,
+    "net": 15338,
+    "perFavor": 1533.8,
+    "status": "ok"
+   },
+   {
+    "best": 4231,
+    "crateCost": 15361,
+    "crateStatus": "ok",
+    "id": 248702,
+    "locked": false,
+    "matCost": 794,
+    "net": 15655,
+    "perFavor": 1565.5,
+    "status": "ok"
+   },
+   {
+    "best": 3821,
+    "crateCost": 24774,
+    "crateStatus": "ok",
+    "id": 248690,
+    "locked": false,
+    "matCost": 1140,
+    "net": 25164,
+    "perFavor": 1677.6,
+    "status": "ok"
+   },
+   {
+    "best": 2776,
+    "crateCost": 26503,
+    "crateStatus": "ok",
+    "id": 248692,
+    "locked": false,
+    "matCost": 1210,
+    "net": 26963,
+    "perFavor": 1797.533333,
+    "status": "ok"
+   },
+   {
+    "best": 4234,
+    "crateCost": 23755,
+    "crateStatus": "ok",
+    "id": 248693,
+    "locked": false,
+    "matCost": 8720,
+    "net": 31725,
+    "perFavor": 2115,
+    "status": "ok"
+   },
+   {
+    "best": 4363,
+    "crateCost": 23487,
+    "crateStatus": "ok",
+    "id": 248704,
+    "locked": false,
+    "matCost": 520,
+    "net": 23507,
+    "perFavor": 2350.7,
+    "status": "ok"
+   },
+   {
+    "best": 11084,
+    "crateCost": 22056,
+    "crateStatus": "ok",
+    "id": 248685,
+    "locked": false,
+    "matCost": 222,
+    "net": 22028,
+    "perFavor": 4405.6,
+    "status": "ok"
+   },
+   {
+    "best": 2318,
+    "crateCost": 21832,
+    "crateStatus": "ok",
+    "id": 248684,
+    "locked": false,
+    "matCost": 13000,
+    "net": 34582,
+    "perFavor": 6916.4,
+    "status": "ok"
+   },
+   {
+    "best": false,
+    "crateCost": 22210,
+    "crateStatus": "ok",
+    "id": 248682,
+    "locked": false,
+    "status": "nomats"
+   },
+   {
+    "best": 2770,
+    "crateStatus": "none",
+    "id": 248683,
+    "locked": false,
+    "matCost": 1740,
+    "status": "nocrate"
+   }
+  ],
+  "writs": [
+   {
+    "cost": 100,
+    "done": false,
+    "id": 0,
+    "itemCost": 0,
+    "perRep": 2,
+    "receipt": true,
+    "repGain": 50,
+    "status": "ok",
+    "writCost": 100
+   },
+   {
+    "cost": 1800,
+    "done": true,
+    "id": 264013,
+    "itemCost": 300,
+    "perRep": 24,
+    "receipt": false,
+    "repGain": 75,
+    "status": "ok",
+    "writCost": 1500
+   },
+   {
+    "cost": 3500,
+    "done": false,
+    "id": 264037,
+    "itemCost": 1500,
+    "perRep": 46.666667,
+    "receipt": false,
+    "repGain": 75,
+    "status": "ok",
+    "writCost": 2000
+   },
+   {
+    "cost": 6500,
+    "done": false,
+    "id": 264085,
+    "itemCost": 2500,
+    "perRep": 52,
+    "receipt": false,
+    "repGain": 125,
+    "status": "ok",
+    "writCost": 4000
+   },
+   {
+    "cost": 12000,
+    "done": false,
+    "id": 264082,
+    "itemCost": 9000,
+    "perRep": 96,
+    "receipt": false,
+    "repGain": 125,
+    "status": "ok",
+    "writCost": 3000
+   },
+   {
+    "cost": 25000,
+    "done": false,
+    "id": 264072,
+    "itemCost": 20000,
+    "perRep": 200,
+    "receipt": false,
+    "repGain": 125,
+    "status": "ok",
+    "writCost": 5000
+   },
+   {
+    "cost": 49000,
+    "done": false,
+    "id": 264124,
+    "itemCost": 40000,
+    "perRep": 245,
+    "receipt": false,
+    "repGain": 200,
+    "status": "ok",
+    "writCost": 9000
+   },
+   {
+    "cost": 50000,
+    "done": false,
+    "id": 264153,
+    "itemCost": 30000,
+    "perRep": 250,
+    "receipt": false,
+    "repGain": 200,
+    "status": "ok",
+    "writCost": 20000
+   },
+   {
+    "done": false,
+    "id": 264119,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264117,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264121,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264120,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264118,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264122,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264123,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264116,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264132,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264130,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264133,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264131,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264129,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264128,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264127,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264126,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264125,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264139,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264137,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264138,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264135,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264136,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264134,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264141,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264142,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264140,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264148,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264151,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264144,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264149,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264150,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264146,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264145,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264147,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264143,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264157,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264156,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264159,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264154,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264158,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264160,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264155,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264152,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264060,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264066,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264063,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264056,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264065,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264061,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264057,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264058,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264062,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264059,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264064,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264067,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264074,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264078,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264079,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264069,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264073,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264071,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264075,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264068,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264070,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264077,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264076,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264081,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264084,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264091,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264087,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264086,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264083,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264089,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264080,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264090,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264088,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264100,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264101,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264092,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264094,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264093,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264099,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264097,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264098,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264103,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264102,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264095,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264096,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264110,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264114,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264106,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264115,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264108,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264104,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264112,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264111,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264105,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264107,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264109,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264113,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264019,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264018,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264016,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264011,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264012,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264015,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264017,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264014,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264027,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264021,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264028,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264026,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264024,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264022,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264020,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264025,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264023,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264036,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264030,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264035,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264032,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264031,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264029,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264033,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264034,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264045,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264044,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264041,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264039,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264038,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264043,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264040,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264042,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264046,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264049,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264048,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264053,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264054,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264047,
+    "receipt": false,
+    "repGain": 75,
+    "status": "noitem",
+    "writCost": 1000
+   },
+   {
+    "done": false,
+    "id": 264051,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264052,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264050,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264055,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   }
+  ]
+ },
+ "after_writs_all": {
+  "crates": [
+   {
+    "best": 10559,
+    "crateCost": 100,
+    "crateStatus": "ok",
+    "id": 248710,
+    "locked": false,
+    "matCost": 5,
+    "net": -1395,
+    "perFavor": 0,
+    "status": "ok"
+   },
+   {
+    "best": 2997,
+    "crateCost": 5649,
+    "crateStatus": "ok",
+    "id": 248705,
+    "locked": false,
+    "matCost": 468,
+    "net": 5117,
+    "perFavor": 255.85,
+    "status": "ok"
+   },
+   {
+    "best": 4625,
+    "crateCost": 7004,
+    "crateStatus": "ok",
+    "id": 248691,
+    "locked": false,
+    "matCost": 1690,
+    "net": 7944,
+    "perFavor": 529.6,
+    "status": "ok"
+   },
+   {
+    "best": 4236,
+    "crateCost": 23611,
+    "crateStatus": "ok",
+    "id": 248708,
+    "locked": false,
+    "matCost": 188,
+    "net": 22299,
+    "perFavor": 743.3,
+    "status": "ok"
+   },
+   {
+    "best": 11082,
+    "crateCost": 7639,
+    "crateStatus": "ok",
+    "id": 248689,
+    "locked": false,
+    "matCost": 464,
+    "net": 7603,
+    "perFavor": 760.3,
+    "status": "ok"
+   },
+   {
+    "best": 3355,
+    "crateCost": 7379,
+    "crateStatus": "ok",
+    "id": 248686,
+    "locked": false,
+    "matCost": 1030,
+    "net": 7909,
+    "perFavor": 790.9,
+    "status": "ok"
+   },
+   {
+    "best": 4382,
+    "crateCost": 17777,
+    "crateStatus": "ok",
+    "id": 248707,
+    "locked": false,
+    "matCost": 264,
+    "net": 17041,
+    "perFavor": 852.05,
+    "status": "ok"
+   },
+   {
+    "best": 3859,
+    "crateCost": 23978,
+    "crateStatus": "ok",
+    "id": 248709,
+    "locked": false,
+    "matCost": 4095,
+    "net": 26573,
+    "perFavor": 885.766667,
+    "status": "ok"
+   },
+   {
+    "best": 3575,
+    "crateCost": 21894,
+    "crateStatus": "ok",
+    "id": 248706,
+    "locked": false,
+    "matCost": 1980,
+    "net": 22874,
+    "perFavor": 1143.7,
+    "status": "ok"
+   },
+   {
+    "best": 11135,
+    "crateCost": 19469,
+    "crateStatus": "ok",
+    "id": 248694,
+    "locked": false,
+    "matCost": 708,
+    "net": 19427,
+    "perFavor": 1295.133333,
+    "status": "ok"
+   },
+   {
+    "best": 2841,
+    "crateCost": 13334,
+    "crateStatus": "ok",
+    "id": 248703,
+    "locked": false,
+    "matCost": 1140,
+    "net": 13974,
+    "perFavor": 1397.4,
+    "status": "ok"
+   },
+   {
+    "best": 2592,
+    "crateCost": 5719,
+    "crateStatus": "ok",
+    "id": 248688,
+    "locked": false,
+    "matCost": 9060,
+    "net": 14279,
+    "perFavor": 1427.9,
+    "status": "ok"
+   },
+   {
+    "best": 2775,
+    "crateCost": 15168,
+    "crateStatus": "ok",
+    "id": 248687,
+    "locked": false,
+    "matCost": 670,
+    "net": 15338,
+    "perFavor": 1533.8,
+    "status": "ok"
+   },
+   {
+    "best": 4231,
+    "crateCost": 15361,
+    "crateStatus": "ok",
+    "id": 248702,
+    "locked": false,
+    "matCost": 794,
+    "net": 15655,
+    "perFavor": 1565.5,
+    "status": "ok"
+   },
+   {
+    "best": 3821,
+    "crateCost": 24774,
+    "crateStatus": "ok",
+    "id": 248690,
+    "locked": false,
+    "matCost": 1140,
+    "net": 25164,
+    "perFavor": 1677.6,
+    "status": "ok"
+   },
+   {
+    "best": 2776,
+    "crateCost": 26503,
+    "crateStatus": "ok",
+    "id": 248692,
+    "locked": false,
+    "matCost": 1210,
+    "net": 26963,
+    "perFavor": 1797.533333,
+    "status": "ok"
+   },
+   {
+    "best": 4234,
+    "crateCost": 23755,
+    "crateStatus": "ok",
+    "id": 248693,
+    "locked": false,
+    "matCost": 8720,
+    "net": 31725,
+    "perFavor": 2115,
+    "status": "ok"
+   },
+   {
+    "best": 4363,
+    "crateCost": 23487,
+    "crateStatus": "ok",
+    "id": 248704,
+    "locked": false,
+    "matCost": 520,
+    "net": 23507,
+    "perFavor": 2350.7,
+    "status": "ok"
+   },
+   {
+    "best": 11084,
+    "crateCost": 22056,
+    "crateStatus": "ok",
+    "id": 248685,
+    "locked": false,
+    "matCost": 222,
+    "net": 22028,
+    "perFavor": 4405.6,
+    "status": "ok"
+   },
+   {
+    "best": 2318,
+    "crateCost": 21832,
+    "crateStatus": "ok",
+    "id": 248684,
+    "locked": false,
+    "matCost": 13000,
+    "net": 34582,
+    "perFavor": 6916.4,
+    "status": "ok"
+   },
+   {
+    "best": false,
+    "crateCost": 22210,
+    "crateStatus": "ok",
+    "id": 248682,
+    "locked": false,
+    "status": "nomats"
+   },
+   {
+    "best": 2770,
+    "crateStatus": "none",
+    "id": 248683,
+    "locked": false,
+    "matCost": 1740,
+    "status": "nocrate"
+   }
+  ],
+  "writs": [
+   {
+    "cost": 100,
+    "done": false,
+    "id": 0,
+    "itemCost": 0,
+    "perRep": 2,
+    "receipt": true,
+    "repGain": 50,
+    "status": "ok",
+    "writCost": 100
+   },
+   {
+    "cost": 1800,
+    "done": true,
+    "id": 264013,
+    "itemCost": 300,
+    "perRep": 24,
+    "receipt": false,
+    "repGain": 75,
+    "status": "ok",
+    "writCost": 1500
+   },
+   {
+    "cost": 3500,
+    "done": false,
+    "id": 264037,
+    "itemCost": 1500,
+    "perRep": 46.666667,
+    "receipt": false,
+    "repGain": 75,
+    "status": "ok",
+    "writCost": 2000
+   },
+   {
+    "cost": 6500,
+    "done": false,
+    "id": 264085,
+    "itemCost": 2500,
+    "perRep": 52,
+    "receipt": false,
+    "repGain": 125,
+    "status": "ok",
+    "writCost": 4000
+   },
+   {
+    "cost": 12000,
+    "done": false,
+    "id": 264082,
+    "itemCost": 9000,
+    "perRep": 96,
+    "receipt": false,
+    "repGain": 125,
+    "status": "ok",
+    "writCost": 3000
+   },
+   {
+    "cost": 25000,
+    "done": false,
+    "id": 264072,
+    "itemCost": 20000,
+    "perRep": 200,
+    "receipt": false,
+    "repGain": 125,
+    "status": "ok",
+    "writCost": 5000
+   },
+   {
+    "cost": 49000,
+    "done": false,
+    "id": 264124,
+    "itemCost": 40000,
+    "perRep": 245,
+    "receipt": false,
+    "repGain": 200,
+    "status": "ok",
+    "writCost": 9000
+   },
+   {
+    "cost": 50000,
+    "done": false,
+    "id": 264153,
+    "itemCost": 30000,
+    "perRep": 250,
+    "receipt": false,
+    "repGain": 200,
+    "status": "ok",
+    "writCost": 20000
+   },
+   {
+    "done": false,
+    "id": 264119,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264117,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264121,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264120,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264118,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264122,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264123,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264116,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264132,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264130,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264133,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264131,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264129,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264128,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264127,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264126,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264125,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264139,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264137,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264138,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264135,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264136,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264134,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264141,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264142,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264140,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264148,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264151,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264144,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264149,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264150,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264146,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264145,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264147,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264143,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264157,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264156,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264159,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264154,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264158,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264160,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264155,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264152,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 200,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264060,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264066,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264063,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264056,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264065,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264061,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264057,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264058,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264062,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264059,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264064,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264067,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264074,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264078,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264079,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264069,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264073,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264071,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264075,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264068,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264070,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264077,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264076,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264081,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264084,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264091,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264087,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264086,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264083,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264089,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264080,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264090,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264088,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264100,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264101,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264092,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264094,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264093,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264099,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264097,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264098,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264103,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264102,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264095,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264096,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264110,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264114,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264106,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264115,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264108,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264104,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264112,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264111,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264105,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264107,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264109,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264113,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 125,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264019,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264018,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264016,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264011,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264012,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264015,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264017,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264014,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264027,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264021,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264028,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264026,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264024,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264022,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264020,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264025,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264023,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264036,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264030,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264035,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264032,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264031,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264029,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264033,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264034,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264045,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264044,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264041,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264039,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264038,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264043,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264040,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264042,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264046,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264049,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264048,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264053,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264054,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264047,
+    "receipt": false,
+    "repGain": 75,
+    "status": "noitem",
+    "writCost": 1000
+   },
+   {
+    "done": false,
+    "id": 264051,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264052,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264050,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   },
+   {
+    "done": false,
+    "id": 264055,
+    "itemCost": 777,
+    "receipt": false,
+    "repGain": 75,
+    "status": "nowrit"
+   }
+  ]
+ },
+ "source": "WaylaidCrate 1.3.0 (git be084d5) in tests/wowmock.py, MARKET_130"
+}

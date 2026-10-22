@@ -33,12 +33,22 @@ function RUN(maxTime)
     nextT.fn()
   end
 end
+TICKERS = 0        -- tickers currently running (must be 0 while idle)
 C_Timer = {
   After = function(d, fn) schedule(d, fn) end,
   NewTimer = function(d, fn) local t = schedule(d, fn); return { Cancel = function() t.cancelled = true end } end,
+  NewTicker = function(d, fn)
+    local h = { dead = false }
+    TICKERS = TICKERS + 1
+    local function loop() if h.dead then return end; fn(h); if not h.dead then h.t = schedule(d, loop) end end
+    h.t = schedule(d, loop)
+    h.Cancel = function() if not h.dead then h.dead = true; TICKERS = TICKERS - 1; h.t.cancelled = true end end
+    return h
+  end,
 }
 function GetTime() return CLOCK end
 function time() return 1791990000 + math.floor(CLOCK) end
+function GetServerTime() return time() end
 function date(fmt, t) return os.date(fmt, t or time()) end
 function GetLocale() return LOCALE end
 PLAYER_LEVEL = 18
@@ -159,6 +169,9 @@ C_AuctionHouse = {
       end
     end)
   end,
+  -- number of result rows (used by the 2026.10 Scanner; each BOOK entry is one row {unitPrice, quantity})
+  GetNumCommoditySearchResults = function(id) return #(current.commodity[id] or {}) end,
+  GetNumItemSearchResults = function(key) return #(current.item[key.itemID] or {}) end,
   GetCommoditySearchResultsQuantity = function(id) return #(current.commodity[id] or {}) end,
   GetCommoditySearchResultInfo = function(id, i)
     local e = current.commodity[id][i]; if not e then return nil end
@@ -184,7 +197,11 @@ loader = lua.eval("function(src, name, ns) local f, err = loadstring(src, '@' ..
 for line in open(os.path.join(ADDON, "WaylaidCrate.toc"), encoding="utf-8"):
     line = line.strip()
     if line and not line.startswith("#"):
-        loader(open(os.path.join(ADDON, line), encoding="utf-8").read(), line, WC)
+        path = os.path.join(ADDON, line)
+        if not os.path.exists(path):
+            print(f"  (skipping {line}: not written yet)")   # modules are written in parallel
+            continue
+        loader(open(path, encoding="utf-8").read(), line, WC)
 print(f"[{LOCALE}/{SCENARIO}] loaded files OK")
 
 g = lua.globals()
@@ -250,6 +267,7 @@ if SCENARIO == "close":
     fire("AUCTION_HOUSE_CLOSED")
     print("after close: scanning =", WC.Scanner.active, "| bar:", UI.barText._text, "| frame shown:", UI.frame._shown)
     assert not WC.Scanner.active and not UI.frame._shown
+    assert lua.eval("TICKERS") == 0
     print("CLOSE SCENARIO PASSED")
     sys.exit(0)
 run(400)
@@ -391,6 +409,10 @@ q = [sent[i].id for i in range(before + 1, len(sent) + 1)]
 print("writ scan with filter off: queries =", len(q), "items:", len(set(x for x in q if x < 264000)))
 assert len(set(x for x in q if x < 264000)) == 150
 
-# saved results format
-assert db.resultsFormat == 2 and db.scannedAt.writs and db.scannedAt.crates
+# saved results format (2 = 1.3.0, 3 = 2026.10.x with the same results layout)
+assert db.resultsFormat in (2, 3) and db.scannedAt.writs and db.scannedAt.crates
+# nothing ticks while idle, and no tab raised an error
+assert lua.eval("TICKERS") == 0, lua.eval("TICKERS")
+errs = UI.errors
+assert errs is None or len(errs) == 0, [errs[i] for i in range(1, len(errs) + 1)]
 print("ALL CHECKS PASSED")

@@ -1,32 +1,15 @@
 local addonName, WC = ...
 
+-- Start-up, Auction House open/close, slash commands, and the Crates / Writs calculations.
+-- Settings, saved prices and price lookups (WC:DB, WC:CostFor, ...) live in Store.lua;
+-- the window and its tabs in UI.lua; WC:Tab() is defined in UI.lua (it needs the tab registry).
+
 WC.ahOpen = false
 
--- version comes from the TOC so it is set in one place
-do
-  local ok, v = pcall(function()
-    if C_AddOns and C_AddOns.GetAddOnMetadata then return C_AddOns.GetAddOnMetadata(addonName, "Version") end
-    if GetAddOnMetadata then return GetAddOnMetadata(addonName, "Version") end
-  end)
-  WC.VERSION = ok and v or nil
+-- Store.lua normally provides this; keep the crate / writ math working if it failed to load
+if not WC.DB then
+  function WC:DB() return WaylaidCrateDB or {} end
 end
-
-local RESULTS_FORMAT = 2   -- bump when the saved price format changes
-
-local DEFAULTS = {
-  autoScan = true,        -- scan the open tab when the Auction House opens
-  tab = "crates",         -- "crates" (Merchant's Favor) or "writs" (reputation)
-  -- crates tab
-  onlyMine = false,       -- only crates my level can open
-  hideNoCrate = true,     -- ignore crates that nobody is selling
-  hideNoMats = true,      -- ignore crates whose materials are all out of stock
-  perfRank = 0,           -- Legacy Performance Bonus rank (0-3)
-  -- reputation tab
-  hideNoWrit = true,      -- ignore writs nobody is selling
-  hideNoItem = true,      -- ignore writs whose requested item can't be bought
-  hideDone = true,        -- ignore writs already turned in today
-  diplomatRank = 0,       -- Legacy Diplomat rank (0-5)
-}
 
 function WC:Print(msg)
   DEFAULT_CHAT_FRAME:AddMessage("|cffd4a017Waylaid Crate|r: " .. tostring(msg))
@@ -45,7 +28,7 @@ function WC:ItemName(itemID)
   local name = ClientName(itemID)
   if name then return name end
   local d = WC.ITEMS[itemID]
-  if not d then return "item:" .. itemID end
+  if not d then return "item:" .. tostring(itemID) end
   return WC.USE_CN_FALLBACK and d[2] or d[1]
 end
 
@@ -70,20 +53,8 @@ function WC:CrateShortName(crate)
   return AfterColon(name)
 end
 
-function WC:SaveResults()
-  if not WaylaidCrateDB then return end
-  WaylaidCrateDB.results = WC.Scanner.results
-  WaylaidCrateDB.resultsFormat = RESULTS_FORMAT
-  WaylaidCrateDB.scannedAt = WaylaidCrateDB.scannedAt or {}
-  if type(WaylaidCrateDB.scannedAt) ~= "table" then WaylaidCrateDB.scannedAt = {} end
-  WaylaidCrateDB.scannedAt[WC.Scanner.kind or "crates"] = time()
-end
-
 -- ---------------------------------------------------------------------------
 -- bonuses
-
-function WC:DB() return WaylaidCrateDB or DEFAULTS end
-function WC:Tab() return WC:DB().tab == "writs" and "writs" or "crates" end
 
 -- Human "Diplomacy" (+10% reputation): not in Forever's racial list, but check the spell anyway.
 function WC:HasDiplomacy()
@@ -292,7 +263,7 @@ function WC:VisibleWrits(list)
 end
 
 -- ---------------------------------------------------------------------------
--- events
+-- events (the Scanner registers its own Auction House result events)
 
 local frame = CreateFrame("Frame")
 
@@ -304,55 +275,79 @@ SafeRegister("ADDON_LOADED")
 SafeRegister("PLAYER_LOGIN")
 SafeRegister("AUCTION_HOUSE_SHOW")
 SafeRegister("AUCTION_HOUSE_CLOSED")
-SafeRegister("COMMODITY_SEARCH_RESULTS_UPDATED")
-SafeRegister("ITEM_SEARCH_RESULTS_UPDATED")
-SafeRegister("AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED")
 SafeRegister("PLAYER_LEVEL_UP")
 SafeRegister("QUEST_TURNED_IN")
 SafeRegister("UPDATE_FACTION")
+
+WC.AddLocale({
+  enUS = {
+    CORE_AUTO_SKIPPED = "This tab reads the whole Auction House (1-4 minutes), so it doesn't scan automatically. Click \"Scan Auction House\" when you want it.",
+    CORE_NO_ERRORS = "No errors recorded.",
+    IDLE_LAST_MANUAL = "Last scan %s · prices may have changed · click \"Scan Auction House\" to refresh",
+    IDLE_NEVER_MANUAL = "Not scanned yet · click \"Scan Auction House\" (with the Auction House open)",
+  },
+  zhCN = {
+    CORE_AUTO_SKIPPED = "这一页要翻完整个拍卖行（1-4 分钟），不会自动扫描。需要时点『扫描拍卖行』。",
+    CORE_NO_ERRORS = "没有记录到错误。",
+    IDLE_LAST_MANUAL = "上次扫描 %s · 价格可能已经变了 · 点『扫描拍卖行』更新",
+    IDLE_NEVER_MANUAL = "还没扫描过 · 打开拍卖行后点『扫描拍卖行』",
+  },
+  zhTW = {
+    CORE_AUTO_SKIPPED = "這一頁要翻完整個拍賣場（1-4 分鐘），不會自動掃描。需要時點『掃描拍賣場』。",
+    CORE_NO_ERRORS = "沒有記錄到錯誤。",
+    IDLE_LAST_MANUAL = "上次掃描 %s · 價格可能已經變了 · 點『掃描拍賣場』更新",
+    IDLE_NEVER_MANUAL = "還沒掃描過 · 打開拍賣場後點『掃描拍賣場』",
+  },
+})
+
+local function ReportError(where, err)
+  if WC.UI and WC.UI.Report then WC.UI.Report(where, err) else WC:Print(tostring(where) .. ": " .. tostring(err)) end
+end
+
+-- warm the item cache so crate / writ names show in the client's language
+local function WarmItemCache()
+  if not (C_Item and C_Item.RequestLoadItemDataByID) then return end
+  for itemID in pairs(WC.ITEMS) do pcall(C_Item.RequestLoadItemDataByID, itemID) end
+  for _, w in ipairs(WC.WRITS) do
+    pcall(C_Item.RequestLoadItemDataByID, w.writ)
+    pcall(C_Item.RequestLoadItemDataByID, w.item)
+  end
+end
 
 frame:SetScript("OnEvent", function(_, event, ...)
   if event == "ADDON_LOADED" then
     local name = ...
     if name ~= addonName then return end
-    WaylaidCrateDB = WaylaidCrateDB or {}
-    for k, v in pairs(DEFAULTS) do
-      if WaylaidCrateDB[k] == nil then WaylaidCrateDB[k] = v end
-    end
-    WaylaidCrateDB.mode = nil   -- removed in 1.3.0
-    if WaylaidCrateDB.resultsFormat == RESULTS_FORMAT and type(WaylaidCrateDB.results) == "table" then
-      WC.Scanner.results = WaylaidCrateDB.results
+    if WC.Store and WC.Store.Init then
+      local ok, err = pcall(WC.Store.Init, WC.Store)
+      if not ok then ReportError("Store:Init", err) end
     else
-      WaylaidCrateDB.results, WaylaidCrateDB.scannedAt = nil, nil
+      WaylaidCrateDB = WaylaidCrateDB or {}
+      WC:Fire("DB_READY")
     end
   elseif event == "PLAYER_LOGIN" then
-    -- warm the item cache so names show in the client's language
-    if C_Item and C_Item.RequestLoadItemDataByID then
-      for itemID in pairs(WC.ITEMS) do pcall(C_Item.RequestLoadItemDataByID, itemID) end
-      for _, w in ipairs(WC.WRITS) do
-        pcall(C_Item.RequestLoadItemDataByID, w.writ)
-        pcall(C_Item.RequestLoadItemDataByID, w.item)
-      end
-    end
+    WarmItemCache()
     WC.UI:Create()
   elseif event == "AUCTION_HOUSE_SHOW" then
     WC.ahOpen = true
     WC.UI:ShowAtAuctionHouse()
-    if WaylaidCrateDB and WaylaidCrateDB.autoScan then
+    if WC:DB().autoScan then
       C_Timer.After(1.0, function()
-        if WC.ahOpen and not WC.Scanner.active then WC.Scanner:Start(WC:Tab()) end
+        if not (WC.ahOpen and WC.Scanner and not WC.Scanner.active) then return end
+        -- Flips / Disenchant read the whole AH page by page (1-4 minutes) and that replaces Blizzard's
+        -- own browse list, so they only run when the player asks for them.
+        local kind = WC.UI.ScanKindFor and WC.UI:ScanKindFor(WC:Tab()) or WC:Tab()
+        if kind == "flips" or kind == "de" then
+          WC:Print(WC.L.CORE_AUTO_SKIPPED)
+          return
+        end
+        WC.UI:StartScan(WC:Tab())
       end)
     end
   elseif event == "AUCTION_HOUSE_CLOSED" then
     WC.ahOpen = false
-    WC.Scanner:Stop(WC.L.STOP_AH_CLOSED)
+    if WC.Scanner then WC.Scanner:Stop(WC.L.STOP_AH_CLOSED) end
     WC.UI:OnAuctionHouseClosed()
-  elseif event == "COMMODITY_SEARCH_RESULTS_UPDATED" then
-    WC.Scanner:OnCommodityResults(...)
-  elseif event == "ITEM_SEARCH_RESULTS_UPDATED" then
-    WC.Scanner:OnItemResults(...)
-  elseif event == "AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED" then
-    WC.Scanner:OnMessageDropped()
   elseif event == "PLAYER_LEVEL_UP" or event == "QUEST_TURNED_IN" or event == "UPDATE_FACTION" then
     C_Timer.After(0.5, function() WC.UI:Refresh() end)
   end
@@ -360,25 +355,65 @@ end)
 
 -- ---------------------------------------------------------------------------
 -- slash commands: /wc  /waylaid
+--   /wc            open / close
+--   /wc scan       scan the open tab          /wc scan <tab>   open that tab and scan it
+--   /wc stop       stop the scan              /wc <tab>        open that tab
+-- tabs: crates writs flips craft de history (only the ones that are loaded)
+
+local TAB_ALIASES = {
+  crate = "crates", writ = "writs", flip = "flips", crafting = "craft", disenchant = "de",
+  prices = "history", price = "history", hist = "history",
+}
+
+local function ResolveTab(word)
+  word = TAB_ALIASES[word] or word
+  if WC.UI.tabSpecs[word] then return word end
+end
+
+local function PrintHelp()
+  WC:Print(WC.L.UI_HELP:format(table.concat(WC.UI:TabKeys(), ", ")))
+end
 
 SLASH_WAYLAIDCRATE1 = "/wc"
 SLASH_WAYLAIDCRATE2 = "/waylaid"
 SlashCmdList.WAYLAIDCRATE = function(msg)
   msg = strtrim(string.lower(msg or ""))
-  if msg == "scan" then
-    WC.UI:Show()
-    WC.Scanner:Start(WC:Tab())
-  elseif msg == "scan writs" or msg == "writs" then
-    WC.UI:Show()
-    WC.UI:SelectTab("writs")
-    WC.Scanner:Start("writs")
-  elseif msg == "scan crates" or msg == "crates" then
-    WC.UI:Show()
-    WC.UI:SelectTab("crates")
-    WC.Scanner:Start("crates")
-  elseif msg == "stop" then
-    WC.Scanner:Stop(WC.L.STOP_MANUAL)
+  local cmd, arg = msg:match("^(%S*)%s*(.-)$")
+  local UI = WC.UI
+  if cmd == "" then
+    UI:Toggle()
+  elseif cmd == "scan" then
+    local key = WC:Tab()
+    if arg ~= "" then
+      key = ResolveTab(arg)
+      if not key then
+        WC:Print(WC.L.UI_UNKNOWN_TAB_FMT:format(arg))
+        PrintHelp()
+        return
+      end
+    end
+    UI:Show()
+    if key ~= WC:Tab() then UI:SelectTab(key) end
+    UI:StartScan(key)
+  elseif cmd == "stop" then
+    if WC.Scanner then WC.Scanner:Stop(WC.L.STOP_MANUAL) end
+  elseif cmd == "errors" then
+    local list = (UI.errors and #UI.errors > 0) and UI.errors or WC.errors
+    if not list or #list == 0 then
+      WC:Print(WC.L.CORE_NO_ERRORS)
+    else
+      for i, e in ipairs(list) do WC:Print(i .. ". " .. e) end
+    end
+  elseif cmd == "help" or cmd == "?" then
+    PrintHelp()
   else
-    WC.UI:Toggle()
+    local key = ResolveTab(cmd)
+    if key then
+      UI:Show()
+      UI:SelectTab(key)
+    else
+      WC:Print(WC.L.UI_UNKNOWN_TAB_FMT:format(cmd))
+      PrintHelp()
+    end
   end
 end

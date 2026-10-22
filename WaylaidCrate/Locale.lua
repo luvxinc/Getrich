@@ -2,7 +2,7 @@ local addonName, WC = ...
 
 -- UI text follows the game client's language (GetLocale()).
 -- zhCN -> 简体中文, zhTW -> 繁體中文, everything else -> English.
-local L = {}
+local L = WC.L or {}   -- created in Util.lua; modules add strings with WC.AddLocale
 WC.L = L
 
 -- English (default) ----------------------------------------------------------

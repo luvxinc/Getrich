@@ -7,7 +7,13 @@ local Money, Num, Pct, Font = WC.Money, UI.Num, UI.Pct, UI.Font
 local C_GREEN, C_ORANGE, C_GREY, C_UNCOMMON = UI.C_GREEN, UI.C_ORANGE, UI.C_GREY, UI.C_UNCOMMON
 
 local Tab = {}
-UI.tabs.crates = Tab
+UI:RegisterTab("crates", { order = 1, tab = Tab,
+  label = function() return L.UI_TAB_CRATES end,      -- short name for the tab bar
+  title = function() return L.TAB_CRATES end })      -- full name for the tab tooltip
+
+function Tab:ScanKind() return "crates" end
+function Tab:Subtitle() return L.SUBTITLE_CRATES end
+function Tab:ScanTip() return L.SCAN_TIP_crates end
 
 local COL = {
   rank  = { x = 4, w = 26, justify = "CENTER" },
