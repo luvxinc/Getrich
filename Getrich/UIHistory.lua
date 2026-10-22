@@ -420,7 +420,7 @@ function Tab:ScrollList(delta)
 end
 
 function Tab:Select(itemID)
-  if WaylaidCrateDB then WaylaidCrateDB.historyItem = itemID end
+  if GetrichDB then GetrichDB.historyItem = itemID end
   self.selected = itemID
   self:Refresh()
 end
@@ -477,7 +477,7 @@ function Tab:CreateRangeButtons(panel)
     b:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -x, -1)
     x = x + b:GetWidth() + 4
     b:SetScript("OnClick", function()
-      if WaylaidCrateDB then WaylaidCrateDB.historyRange = r.key end
+      if GetrichDB then GetrichDB.historyRange = r.key end
       self:Refresh()
     end)
     self.rangeButtons[r.key] = b
@@ -935,7 +935,7 @@ function Tab:Refresh()
   local sel = db.historyItem
   if not sel and self.items[1] then
     sel = self.items[1].id
-    if WaylaidCrateDB then WaylaidCrateDB.historyItem = sel end
+    if GetrichDB then GetrichDB.historyItem = sel end
   end
   self.selected = sel
   self:FillItems()

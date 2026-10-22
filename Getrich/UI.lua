@@ -37,7 +37,9 @@ WC.AddLocale({
     UI_SEARCH = "Search…",
     UI_SEARCH_AFTER_SCAN = "A scan is running, so \"%s\" was only put into the search box. Press Search when the scan is done.",
     UI_TAB_ERROR_FMT = "Error in the %s tab: %s",
-    UI_HELP = "/wc: open or close · /wc scan: scan this tab · /wc scan <tab> · /wc stop · /wc <tab>: open a tab. Tabs: %s",
+    UI_HELP = "/gr: open or close · /gr scan: scan this tab · /gr scan <tab> · /gr stop · /gr <tab>: open a tab · /gr settings: options · /gr errors: list errors (/getrich and /wc work too). Tabs: %s",
+    UI_GEAR_TIP = "Settings",
+    UI_GEAR_TIP2 = "All options, clearing saved data, and contact details (/gr settings).",
     UI_UNKNOWN_TAB_FMT = "There is no \"%s\" tab.",
   },
   zhCN = {
@@ -60,7 +62,9 @@ WC.AddLocale({
     UI_SEARCH = "搜索…",
     UI_SEARCH_AFTER_SCAN = "正在扫描，所以只把「%s」填进了搜索栏。扫描结束后再点搜索。",
     UI_TAB_ERROR_FMT = "「%s」页出错：%s",
-    UI_HELP = "/wc：打开或关闭 · /wc scan：扫描当前页 · /wc scan <页> · /wc stop：停止 · /wc <页>：打开某页。页：%s",
+    UI_HELP = "/gr：打开或关闭 · /gr scan：扫描当前页 · /gr scan <页> · /gr stop：停止 · /gr <页>：打开某页 · /gr settings：设置 · /gr errors：查看错误（/getrich 和 /wc 也可以）。页：%s",
+    UI_GEAR_TIP = "设置",
+    UI_GEAR_TIP2 = "所有选项、清除保存的数据、联系方式（/gr settings）。",
     UI_UNKNOWN_TAB_FMT = "没有「%s」这一页。",
   },
   zhTW = {
@@ -83,10 +87,19 @@ WC.AddLocale({
     UI_SEARCH = "搜尋…",
     UI_SEARCH_AFTER_SCAN = "正在掃描，所以只把「%s」填進了搜尋欄。掃描結束後再點搜尋。",
     UI_TAB_ERROR_FMT = "「%s」頁出錯：%s",
-    UI_HELP = "/wc：開啟或關閉 · /wc scan：掃描目前頁面 · /wc scan <頁> · /wc stop：停止 · /wc <頁>：開啟某頁。頁：%s",
+    UI_HELP = "/gr：開啟或關閉 · /gr scan：掃描目前頁面 · /gr scan <頁> · /gr stop：停止 · /gr <頁>：開啟某頁 · /gr settings：設定 · /gr errors：查看錯誤（/getrich 和 /wc 也可以）。頁：%s",
+    UI_GEAR_TIP = "設定",
+    UI_GEAR_TIP2 = "所有選項、清除儲存的資料、聯絡方式（/gr settings）。",
     UI_UNKNOWN_TAB_FMT = "沒有「%s」這一頁。",
   },
 })
+
+-- settings owned by the window (shown on the Settings page)
+if WC.Store and WC.Store.Default then
+  WC.Store:Default("chatOnDone", true)   -- print the result in chat when a scan finishes
+  WC.Store:Default("uiScale", 1.0)       -- window scale, 0.8 - 1.3
+  WC.Store:Default("dockToAH", true)     -- put the window next to the Auction House when it opens
+end
 
 local W, H = 700, 700
 UI.W = W
@@ -95,8 +108,10 @@ local PANEL_TOP = -150
 local PANEL_BOTTOM = 30
 local PANEL_H = H + (PANEL_TOP - 6) - PANEL_BOTTOM   -- 514: height of a tab panel
 local TAB_AREA, TAB_GAP, TAB_PAD, TAB_MIN_PAD = W - 28, 4, 36, 10
-local ICON = "Interface\\Icons\\INV_Crate_07"
+local ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 local WHITE = "Interface\\Buttons\\WHITE8X8"
+local GEAR = "Interface\\WorldMap\\GEAR_64GREY"   -- also used by Camelot/PaperDollFrame.xml and MenuVariants.GearButtonTexture
+local SCALE_MIN, SCALE_MAX = 0.8, 1.3
 
 UI.C_GREEN  = "|cff4cff6a"
 UI.C_ORANGE = "|cffff9a2e"
@@ -107,7 +122,7 @@ local C_GREY = UI.C_GREY
 
 local function DB()
   if WC.DB then return WC:DB() end
-  return WaylaidCrateDB or {}
+  return GetrichDB or {}
 end
 
 -- an error inside a tab must not break the window or a running scan
@@ -263,7 +278,7 @@ function UI.Hotspot(parent, tab, kind, getEntry)
   return b
 end
 
--- settings widgets write WaylaidCrateDB[key], tell other modules (SETTINGS_CHANGED) and redraw
+-- settings widgets write GetrichDB[key], tell other modules (SETTINGS_CHANGED) and redraw
 local function SettingChanged(key)
   WC:Fire("SETTINGS_CHANGED", key)
   UI:Refresh()
@@ -279,9 +294,9 @@ function UI:Check(parent, label, x, y, key, tip)
   cb.labelWidth = fs:GetStringWidth()
   cb.key = key
   cb:SetHitRectInsets(0, -(cb.labelWidth + 6), 0, 0)
-  cb:SetChecked(WaylaidCrateDB and WaylaidCrateDB[key])
+  cb:SetChecked(GetrichDB and GetrichDB[key])
   cb:SetScript("OnClick", function(b)
-    if WaylaidCrateDB then WaylaidCrateDB[key] = b:GetChecked() and true or false end
+    if GetrichDB then GetrichDB[key] = b:GetChecked() and true or false end
     SettingChanged(key)
   end)
   Tip(cb, label, tip)
@@ -312,11 +327,11 @@ function UI:Cycler(parent, x, y, label, key, max, tip)
   b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
   b.key, b.max = key, max
   b:SetScript("OnClick", function(_, button)
-    if not WaylaidCrateDB then return end
-    local v = tonumber(WaylaidCrateDB[key]) or 0
+    if not GetrichDB then return end
+    local v = tonumber(GetrichDB[key]) or 0
     v = (button == "RightButton") and (v - 1) or (v + 1)
     if v > max then v = 0 elseif v < 0 then v = max end
-    WaylaidCrateDB[key] = v
+    GetrichDB[key] = v
     SettingChanged(key)
   end)
   Tip(b, label, tip)
@@ -376,13 +391,13 @@ function UI:ValueCycler(parent, x, y, label, key, values, labels, tip)
   b:RegisterForClicks("LeftButtonUp", "RightButtonUp")
   b.key, b.values, b.labels = key, values, labels
   b:SetScript("OnClick", function(_, button)
-    if not WaylaidCrateDB then return end
+    if not GetrichDB then return end
     local vals = CyclerOptions(b)
     if #vals == 0 then return end
-    local i = CyclerIndex(vals, WaylaidCrateDB[key]) or 1
+    local i = CyclerIndex(vals, GetrichDB[key]) or 1
     i = (button == "RightButton") and (i - 1) or (i + 1)
     if i > #vals then i = 1 elseif i < 1 then i = #vals end
-    WaylaidCrateDB[key] = vals[i]
+    GetrichDB[key] = vals[i]
     SettingChanged(key)
   end)
   b:SetScript("OnEnter", function(s)
@@ -786,6 +801,7 @@ local function Meta(field)
   end)
   if ok and type(v) == "string" and v ~= "" then return v end
 end
+UI.Meta = Meta   -- TOC field (Version, X-Released, Author, X-Email, X-Website)
 WC.VERSION = Meta("Version")
 WC.RELEASED = Meta("X-Released")
 
@@ -889,7 +905,7 @@ end
 
 function UI:Create()
   if self.frame then return end
-  local f = CreateFrame("Frame", "WaylaidCrateFrame", UIParent, "BackdropTemplate")
+  local f = CreateFrame("Frame", "GetrichFrame", UIParent, "BackdropTemplate")
   self.frame = f
   f:SetSize(W, H)
   f:SetPoint("CENTER")
@@ -903,7 +919,7 @@ function UI:Create()
   f:SetScript("OnDragStop", function(s) s:StopMovingOrSizing(); UI.userMoved = true end)
   Backdrop(f, { 0.055, 0.06, 0.075, 0.97 }, { 0.42, 0.33, 0.14, 1 })
   f:Hide()
-  tinsert(UISpecialFrames, "WaylaidCrateFrame")   -- ESC closes the window
+  tinsert(UISpecialFrames, "GetrichFrame")   -- ESC closes the window
   f:SetScript("OnShow", function() TabCall(WC:Tab(), "OnShow") end)
 
   -- title
@@ -914,7 +930,7 @@ function UI:Create()
   icon:SetTexCoord(0.07, 0.93, 0.07, 0.93)
   local title = Font(f, "GameFontNormalLarge", "LEFT")
   title:SetPoint("TOPLEFT", icon, "TOPRIGHT", 10, -1)
-  title:SetText("Waylaid Crate")
+  title:SetText("Getrich")
   local version = Font(f, "GameFontDisableSmall", "LEFT")
   version:SetPoint("LEFT", title, "RIGHT", 8, -1)
   version:SetText(UI.VersionText())
@@ -923,6 +939,23 @@ function UI:Create()
   self.subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -3)
   local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
   close:SetPoint("TOPRIGHT", 0, 0)
+  local gear = CreateFrame("Button", nil, f)
+  gear:SetSize(20, 20)
+  gear:SetPoint("TOPRIGHT", -34, -6)
+  local gearTex = gear:CreateTexture(nil, "ARTWORK")
+  gearTex:SetAllPoints()
+  gearTex:SetTexture(GEAR)
+  gearTex:SetVertexColor(0.8, 0.75, 0.6)
+  gear:SetScript("OnClick", function() if WC.Settings then WC.Settings:Open() end end)
+  gear:SetScript("OnEnter", function(b)
+    gearTex:SetVertexColor(1, 0.82, 0.2)
+    GameTooltip:SetOwner(b, "ANCHOR_BOTTOMLEFT")
+    GameTooltip:AddLine(L.UI_GEAR_TIP)
+    GameTooltip:AddLine(L.UI_GEAR_TIP2, 1, 1, 1, true)
+    GameTooltip:Show()
+  end)
+  gear:SetScript("OnLeave", function() gearTex:SetVertexColor(0.8, 0.75, 0.6); GameTooltip_Hide() end)
+  self.gearButton = gear
 
   -- tab bar
   self.tabButtons = {}
@@ -994,8 +1027,17 @@ function UI:Create()
   foot:SetPoint("BOTTOMLEFT", 14, 12)
   foot:SetText(L.FOOTER)
 
+  self:ApplyScale()
   self:SetIdleText()
   self:SelectTab(WC:Tab())
+end
+
+-- window size from the uiScale setting (0.8 - 1.3)
+function UI:ApplyScale()
+  if not self.frame then return end
+  local v = tonumber(DB().uiScale) or 1
+  if v < SCALE_MIN then v = SCALE_MIN elseif v > SCALE_MAX then v = SCALE_MAX end
+  self.frame:SetScale(v)
 end
 
 -- build a tab's panel the first time it is opened
@@ -1019,7 +1061,7 @@ function UI:SelectTab(key)
   if not self.frame then return end
   if not (key and self.tabSpecs[key]) then key = WC:Tab() end
   if not self.tabSpecs[key] then return end
-  if WaylaidCrateDB then WaylaidCrateDB.tab = key end
+  if GetrichDB then GetrichDB.tab = key end
   self:EnsurePanel(key)
   for k, b in pairs(self.tabButtons) do
     local on = (k == key)
@@ -1068,7 +1110,11 @@ for _, msg in ipairs({ "PRICES_UPDATED", "RECIPES_UPDATED", "VENDOR_UPDATED", "D
   WC:On(msg, function() UI:RequestRefresh() end)
 end
 WC:On("DB_READY", function()
-  if UI.frame then UI:SelectTab(WC:Tab()) end
+  if UI.frame then UI:ApplyScale(); UI:SelectTab(WC:Tab()) end
+end)
+WC:On("SETTINGS_CHANGED", function(key)
+  if key == nil or key == "uiScale" then UI:ApplyScale() end
+  if (key == nil or key == "dockToAH") and UI.frame and UI.frame:IsShown() and WC.ahOpen then UI:PlaceWindow() end
 end)
 
 -- ---------------------------------------------------------------------------
@@ -1233,7 +1279,7 @@ function UI:OnScanDone(kind, stats, ...)
     if tab and tab.BestMessage then msg = L.PRINT_NONE
     else msg = L.UI_DONE_CHAT_FMT:format(KindLabel(kind), UI.Duration(seconds)) end
   end
-  WC:Print(msg)
+  if DB().chatOnDone ~= false then WC:Print(msg) end
   if DB().soundOnDone then PlayDoneSound() end
 end
 
@@ -1280,13 +1326,24 @@ end
 -- ---------------------------------------------------------------------------
 -- show / hide
 
-function UI:ShowAtAuctionHouse()
-  self:Create()
+-- dock the window to the right of the Auction House (dockToAH), unless the player dragged it
+function UI:PlaceWindow()
   local ah = _G.AuctionHouseFrame
-  if ah and not self.userMoved then
+  if self.userMoved then return end
+  if ah and DB().dockToAH ~= false then
     self.frame:ClearAllPoints()
     self.frame:SetPoint("TOPLEFT", ah, "TOPRIGHT", 6, 0)
+    self.docked = true
+  elseif self.docked then
+    self.frame:ClearAllPoints()
+    self.frame:SetPoint("CENTER")
+    self.docked = false
   end
+end
+
+function UI:ShowAtAuctionHouse()
+  self:Create()
+  self:PlaceWindow()
   self:CreateAuctionHouseButton()
   self.frame:Show()
   self:Refresh()
@@ -1304,7 +1361,7 @@ function UI:CreateAuctionHouseButton()
   t:SetTexture(ICON)
   b:SetHighlightTexture("Interface\\Buttons\\ButtonHilight-Square", "ADD")
   b:SetScript("OnClick", function() UI:Toggle() end)
-  Tip(b, "Waylaid Crate", L.AH_BTN_TIP)
+  Tip(b, "Getrich", L.AH_BTN_TIP)
   self.ahButton = b
   self.frame:HookScript("OnShow", function() b:Hide() end)
   self.frame:HookScript("OnHide", function() b:Show() end)

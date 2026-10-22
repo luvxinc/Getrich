@@ -91,7 +91,7 @@ end
 WC.AH_CUT = 0.05
 
 -- Errors caught by pcall in event handlers are not thrown away: each distinct one is passed to the
--- game's error handler once (BugSack / "Display Lua errors") and kept for `/wc errors`.
+-- game's error handler once (BugSack / "Display Lua errors") and kept for `/gr errors`.
 WC.errors = WC.errors or {}
 local seenErrors = {}
 function WC.Debug(where, err)
@@ -104,5 +104,5 @@ function WC.Debug(where, err)
   seenErrors[msg] = true
   if #WC.errors < 50 then WC.errors[#WC.errors + 1] = msg end
   local handler = geterrorhandler and geterrorhandler()
-  if handler then pcall(handler, "Waylaid Crate " .. msg) end
+  if handler then pcall(handler, "Getrich " .. msg) end
 end

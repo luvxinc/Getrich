@@ -88,11 +88,14 @@ WC.AddLocale({
 -- Blizzard_Professions/Blizzard_ProfessionsCrafterOrderPage.lua:105); the ★ glyph may not exist in the enUS font.
 local L = WC.L
 
+-- how many below-vendor-price items the flips scan checks with a targeted search (Settings: 40 / 80 / 150)
+if WC.Store and WC.Store.Default then WC.Store:Default("flipCandidates", 80) end
+
 local Scanner = {
   active = false,
   kind = nil,
   -- [itemID] = { status = "listed"|"none"|"timeout", entries = { {unit, qty}, ... } cheapest first, min, avail, time }
-  -- (replaced by WaylaidCrateDB.results in Store:Init)
+  -- (replaced by GetrichDB.results in Store:Init)
   results = {},
   kinds = {},
   index = 0,
@@ -1059,7 +1062,9 @@ Scanner:RegisterKind("flips", {
     -- listings cheaper than the vendor pays, biggest first (Profit decides)
     { type = "search", label = function() return L.SCAN_PH_FLIP_CHECK end,
       items = function()
-        if WC.Profit and WC.Profit.FlipCandidates then return WC.Profit:FlipCandidates(80) or {} end
+        local n = tonumber(WC:DB().flipCandidates) or 80   -- setting (40 / 80 / 150)
+        if n < 1 or n > 1000 then n = 80 end
+        if WC.Profit and WC.Profit.FlipCandidates then return WC.Profit:FlipCandidates(math.floor(n)) or {} end
         return {}
       end },
   },

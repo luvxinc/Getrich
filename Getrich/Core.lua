@@ -8,11 +8,11 @@ WC.ahOpen = false
 
 -- Store.lua normally provides this; keep the crate / writ math working if it failed to load
 if not WC.DB then
-  function WC:DB() return WaylaidCrateDB or {} end
+  function WC:DB() return GetrichDB or {} end
 end
 
 function WC:Print(msg)
-  DEFAULT_CHAT_FRAME:AddMessage("|cffd4a017Waylaid Crate|r: " .. tostring(msg))
+  DEFAULT_CHAT_FRAME:AddMessage("|cffd4a017Getrich|r: " .. tostring(msg))
 end
 
 -- Item names come from the game client, so they are in the player's language.
@@ -322,7 +322,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
       local ok, err = pcall(WC.Store.Init, WC.Store)
       if not ok then ReportError("Store:Init", err) end
     else
-      WaylaidCrateDB = WaylaidCrateDB or {}
+      GetrichDB = GetrichDB or {}
       WC:Fire("DB_READY")
     end
   elseif event == "PLAYER_LOGIN" then
@@ -354,10 +354,12 @@ frame:SetScript("OnEvent", function(_, event, ...)
 end)
 
 -- ---------------------------------------------------------------------------
--- slash commands: /wc  /waylaid
---   /wc            open / close
---   /wc scan       scan the open tab          /wc scan <tab>   open that tab and scan it
---   /wc stop       stop the scan              /wc <tab>        open that tab
+-- slash commands: /gr  /getrich  (and /wc, the old Waylaid Crate command)
+--   /gr            open / close
+--   /gr scan       scan the open tab          /gr scan <tab>   open that tab and scan it
+--   /gr stop       stop the scan              /gr <tab>        open that tab
+--   /gr settings   the Settings page (also /gr config, /gr options)
+--   /gr errors     list errors caught inside the addon
 -- tabs: crates writs flips craft de history (only the ones that are loaded)
 
 local TAB_ALIASES = {
@@ -374,9 +376,10 @@ local function PrintHelp()
   WC:Print(WC.L.UI_HELP:format(table.concat(WC.UI:TabKeys(), ", ")))
 end
 
-SLASH_WAYLAIDCRATE1 = "/wc"
-SLASH_WAYLAIDCRATE2 = "/waylaid"
-SlashCmdList.WAYLAIDCRATE = function(msg)
+SLASH_GETRICH1 = "/gr"
+SLASH_GETRICH2 = "/getrich"
+SLASH_GETRICH3 = "/wc"   -- old Waylaid Crate command, kept as an alias
+SlashCmdList.GETRICH = function(msg)
   msg = strtrim(string.lower(msg or ""))
   local cmd, arg = msg:match("^(%S*)%s*(.-)$")
   local UI = WC.UI
@@ -397,6 +400,8 @@ SlashCmdList.WAYLAIDCRATE = function(msg)
     UI:StartScan(key)
   elseif cmd == "stop" then
     if WC.Scanner then WC.Scanner:Stop(WC.L.STOP_MANUAL) end
+  elseif cmd == "settings" or cmd == "config" or cmd == "options" or cmd == "option" then
+    if WC.Settings then WC.Settings:Open() end
   elseif cmd == "errors" then
     local list = (UI.errors and #UI.errors > 0) and UI.errors or WC.errors
     if not list or #list == 0 then

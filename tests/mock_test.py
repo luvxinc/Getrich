@@ -1,4 +1,4 @@
-"""Run the WaylaidCrate addon against a mocked WoW client + Auction House (LuaJIT via lupa).
+"""Run the Getrich addon (formerly Waylaid Crate) against a mocked WoW client + Auction House (LuaJIT via lupa).
 
 usage: python3 tests/mock_test.py [ADDON_DIR] [LOCALE] [SCENARIO]
   LOCALE   enUS | zhCN | zhTW        (default enUS)
@@ -9,7 +9,7 @@ import sys, os
 from math import fabs
 from lupa import luajit21 as lj
 
-ADDON = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), '..', 'WaylaidCrate')
+ADDON = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(__file__), '..', 'Getrich')
 LOCALE = sys.argv[2] if len(sys.argv) > 2 else "enUS"
 SCENARIO = sys.argv[3] if len(sys.argv) > 3 else "full"
 
@@ -108,7 +108,7 @@ Stub._methods = {
 FRAMES = {}
 function CreateFrame(kind, name, parent, template)
   local f = newStub(kind)
-  if kind == "Frame" and name == "WaylaidCrateFrame" then f._shown = false end
+  if kind == "Frame" and name == "GetrichFrame" then f._shown = false end
   FRAMES[#FRAMES + 1] = f
   if name then _G[name] = f end
   return f
@@ -193,8 +193,8 @@ end
 lua.eval("function(src) return loadstring(src) end")(MOCK)(LOCALE, SCENARIO)
 
 WC = lua.table()
-loader = lua.eval("function(src, name, ns) local f, err = loadstring(src, '@' .. name); if not f then error(err) end; return f('WaylaidCrate', ns) end")
-for line in open(os.path.join(ADDON, "WaylaidCrate.toc"), encoding="utf-8"):
+loader = lua.eval("function(src, name, ns) local f, err = loadstring(src, '@' .. name); if not f then error(err) end; return f('Getrich', ns) end")
+for line in open(os.path.join(ADDON, "Getrich.toc"), encoding="utf-8"):
     line = line.strip()
     if line and not line.startswith("#"):
         path = os.path.join(ADDON, line)
@@ -210,10 +210,10 @@ fire = lua.eval("FIRE")
 L = lua.eval("function(src) return loadstring(src) end")
 def lx(src, *args): return L(src)(*args)
 
-fire("ADDON_LOADED", "WaylaidCrate")
+fire("ADDON_LOADED", "Getrich")
 fire("PLAYER_LOGIN")
 UI = WC.UI
-db = lua.eval("WaylaidCrateDB")
+db = lua.eval("GetrichDB")
 CRATE_TAB = UI.tabs.crates
 WRIT_TAB = UI.tabs.writs
 

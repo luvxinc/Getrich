@@ -1,27 +1,32 @@
 #!/usr/bin/env python3
-"""Generate WaylaidCrate/DataVendor.lua (WC.VENDOR) and WaylaidCrate/DataDisenchant.lua (WC.DE).
+"""Generate Getrich/DataVendor.lua (WC.VENDOR), Getrich/DataDisenchant.lua (WC.DE) and Getrich/DataRecipes.lua
+(WC.RECIPES, WC.SKILLUP).
 
 Deterministic: the same inputs and arguments always give byte-identical output (all lists are sorted).
 Python 3.8+, standard library only. lupa (pip install lupa) is used only by --check.
 
 Inputs
-  --db DIR        wago.tools DB2 CSV exports of the WoW Forever client build (ItemSparse.csv, Item.csv,
-                  ItemDisenchantLoot.csv, SkillLineAbility.csv, SpellReagents.csv).
+  --db DIR        wago.tools DB2 CSV exports of the WoW Forever client build: ItemSparse, Item, ItemDisenchantLoot,
+                  SkillLineAbility, SpellReagents, SpellEffect, SpellName, ItemEffect, ItemXItemEffect (.csv).
   --build B       client build of those CSVs, e.g. 1.60.1.70450 (header text; also the build --download fetches).
-  --download      first download the five CSVs for --build from https://wago.tools/db2/<Table>/csv?build=B into --db.
+  --download      first download those CSVs for --build from https://wago.tools/db2/<Table>/csv?build=B into --db.
   --sv FILE       SavedVariables file with merchant scans made in the Forever client (repeatable). Understood:
-                    GetrichDB.vendor.observations  (Getrich.lua; only the scan facts are read)
-                    WaylaidCrateDB.vendorObs       (WaylaidCrate.lua, Merchant.lua format)
+                    GetrichDB.vendorObs            (Getrich 2026.10+ Merchant.lua format)
+                    WaylaidCrateDB.vendorObs       (the same format, before the rename)
+                    GetrichDB.vendor.observations  (the old Codex-built Getrich; only the scan facts are read)
                   Every item seen sold for gold with unlimited stock becomes an entry with seen = true.
+                  --check also compares the recipes captured in such a file (old Getrich characters[].recipes,
+                  or GetrichDB.recipes) with WC.RECIPES.
   --pfquest DIR   checkout of https://github.com/shagu/pfQuest (MIT). Classic 1.12 vendor lists (db/items.lua "V"),
                   NPC coordinates/factions (db/units.lua), English NPC and zone names (db/enUS/). Used for recipe
                   reagents sold with unlimited stock (entries/NPCs marked classic). Optional.
-  --out DIR       addon folder to write into (default: ../WaylaidCrate next to this script).
+  --out DIR       addon folder to write into (default: ../Getrich next to this script).
   --date D        date written into the headers (default: today, UTC). Pass it to reproduce a file exactly.
-  --max-skill N   recipes whose yellow skill (TrivialSkillLineRankLow) is <= N count (default 300).
+  --max-skill N   vendor data: reagents of recipes whose yellow skill is <= N; WC.RECIPES: recipes whose learn
+                  skill is <= N (default 300).
   --per-side N    at most N Classic NPCs per faction side for an item (default 3).
-  --check         load the two Lua files with lupa (Lua 5.1) and run the consistency checks (after generating,
-                  or alone when no --db is given).
+  --check         load the three Lua files with lupa (Lua 5.1) and run the consistency checks (after generating,
+                  or alone; with --db it also checks recipe outputs against ItemSparse).
 
 Example (paths of the 2026-10-21 run):
   S=/tmp/claude-0/-home-claude/55dced39-fef5-5660-8cd3-4ed424fad23e/scratchpad
@@ -41,7 +46,8 @@ import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WAGO = "https://wago.tools/db2/{table}/csv?build={build}"
-TABLES = ("ItemSparse", "Item", "ItemDisenchantLoot", "SkillLineAbility", "SpellReagents")
+TABLES = ("ItemSparse", "Item", "ItemDisenchantLoot", "SkillLineAbility", "SpellReagents", "SpellEffect", "SpellName",
+          "ItemEffect", "ItemXItemEffect")
 
 # Profession skill lines (Forever SkillLine.csv). 40 = Poisons (rogue trade skill window).
 PROFESSIONS = {129: "First Aid", 164: "Blacksmithing", 165: "Leatherworking", 171: "Alchemy", 182: "Herbalism",
@@ -170,7 +176,7 @@ def download(db, build):
     os.makedirs(db, exist_ok=True)
     for t in TABLES:
         url = WAGO.format(table=t, build=build)
-        req = urllib.request.Request(url, headers={"User-Agent": "WaylaidCrate-gen_data/1.0 (+github.com/luvxinc/WaylaidCrate)"})
+        req = urllib.request.Request(url, headers={"User-Agent": "Getrich-gen_data/1.0 (+github.com/luvxinc/Getrich)"})
         with urllib.request.urlopen(req, timeout=120) as r:
             data = r.read()
         if data[:1] == b"<":
@@ -410,7 +416,9 @@ def merchant_offers(sv_paths):
         g = read_savedvariables(path)
         files.append(os.path.basename(path))
         gr = g.get("GetrichDB")
-        obs = gr.get("vendor", {}).get("observations", {}) if isinstance(gr, dict) else {}
+        vend = gr.get("vendor") if isinstance(gr, dict) else None
+        obs = vend.get("observations") if isinstance(vend, dict) else None
+        obs = obs if isinstance(obs, dict) else {}
         for key in sorted(obs, key=str):
             o = obs[key]
             if not isinstance(o, dict):
@@ -430,21 +438,24 @@ def merchant_offers(sv_paths):
                     "char": str(o.get("characterKey") or f.get("characterKey") or ""),
                     "build": str(f.get("verifiedBuild") or ""), "obs": str(key),
                 })
-        wc = g.get("WaylaidCrateDB")
-        vo = wc.get("vendorObs", {}) if isinstance(wc, dict) else {}
-        for ik in sorted(vo, key=str):
-            v = vo[ik]
-            if not isinstance(v, dict) or not v.get("price"):
-                continue
-            bundle = to_int(v.get("bundle"), 1) or 1
-            offers.append({
-                "item": to_int(ik), "npc": to_int(v.get("npc")), "name": v.get("name") or "", "zone": v.get("zone") or "",
-                "x": round(float(v["x"]), 1) if v.get("x") is not None else None,
-                "y": round(float(v["y"]), 1) if v.get("y") is not None else None,
-                "price": int(round(float(v["price"]) * bundle)), "qty": bundle,
-                "unlimited": not v.get("limited"), "gold": True, "faction": FACTION_CODE.get(v.get("faction"), ""),
-                "t": to_int(v.get("t")), "char": "WaylaidCrate", "build": "", "obs": "wc:%s" % v.get("npc"),
-            })
+        # Merchant.lua records: GetrichDB.vendorObs (2026.10.3+) or WaylaidCrateDB.vendorObs (before the rename)
+        for svname in ("GetrichDB", "WaylaidCrateDB"):
+            db = g.get(svname)
+            vo = db.get("vendorObs", {}) if isinstance(db, dict) else {}
+            for ik in sorted(vo if isinstance(vo, dict) else {}, key=str):
+                v = vo[ik]
+                if not isinstance(v, dict) or not v.get("price"):
+                    continue
+                bundle = to_int(v.get("bundle"), 1) or 1
+                offers.append({
+                    "item": to_int(ik), "npc": to_int(v.get("npc")), "name": v.get("name") or "",
+                    "zone": v.get("zone") or "",
+                    "x": round(float(v["x"]), 1) if v.get("x") is not None else None,
+                    "y": round(float(v["y"]), 1) if v.get("y") is not None else None,
+                    "price": int(round(float(v["price"]) * bundle)), "qty": bundle,
+                    "unlimited": not v.get("limited"), "gold": True, "faction": FACTION_CODE.get(v.get("faction"), ""),
+                    "t": to_int(v.get("t")), "char": svname, "build": "", "obs": "%s:%s" % (svname, v.get("npc")),
+                })
     return offers, files
 
 
@@ -661,7 +672,7 @@ def write_vendor(path, entries, sparse, args, stats):
     L = []
     L.append("local addonName, WC = ...")
     L.append("")
-    L.append("-- Waylaid Crate vendor data. GENERATED by tools/gen_data.py on %s -- do not edit by hand." % args.date)
+    L.append("-- Getrich vendor data. GENERATED by tools/gen_data.py on %s -- do not edit by hand." % args.date)
     L.append("-- WoW Forever client build %s (DB2 tables from wago.tools)." % args.build)
     L.append("-- WC.VENDOR[itemID] = { buy = copper per purchase, stack = items per purchase, npcs = {...}, seen = true|nil,")
     L.append("--                        classic = true|nil }")
@@ -804,7 +815,7 @@ def write_de(path, de, sparse, args, stats):
     L = []
     L.append("local addonName, WC = ...")
     L.append("")
-    L.append("-- Waylaid Crate disenchant data. GENERATED by tools/gen_data.py on %s -- do not edit by hand." % args.date)
+    L.append("-- Getrich disenchant data. GENERATED by tools/gen_data.py on %s -- do not edit by hand." % args.date)
     L.append("-- Bands (quality, class 2 weapon / 4 armor, item-level range): WoW Forever client ItemDisenchantLoot,")
     L.append("--   build %s (wago.tools)." % args.build)
     L.append("-- Odds and quantities are ESTIMATES from Classic 1.12: vmangos / cmangos disenchant_loot_template, cross-checked")
@@ -848,9 +859,280 @@ def write_de(path, de, sparse, args, stats):
 
 
 # ---------------------------------------------------------------------------------------------------------------
+# WC.RECIPES / WC.SKILLUP
+
+EFFECT_CREATE_ITEM, EFFECT_LEARN_SPELL = 24, 36
+TRIGGER_LEARN = 6                    # ItemEffect.TriggerType: "teaches" (ITEM_SPELLTRIGGER_LEARN_SPELL_ID)
+ITEM_FLAG_DEPRECATED = 0x10          # ItemSparse Flags_0: such recipe items can't be obtained (e.g. "Formula: Imbue
+                                     # Cloak - Protection" 6345, "Deprecated Recipe: Elixir of Fortitude" 2554)
+ACQUIRE_ON_SKILL_LEARN = 1           # SkillLineAbility.AcquireMethod: learned together with the profession
+ACQUIRE_RETIRED = 3                  # set on Classic recipes Forever replaced (Alchemy healing potions moved to First
+                                     # Aid, the old Basic Campfire 818) and on item-use spells (dragonlings)
+SOD_SPELL_IDS = (398000, 1000000)    # Season of Discovery spell IDs (Classic < 30000, Forever-new >= 1,000,000)
+SOD_ITEM_IDS = (200000, 240000)      # Season of Discovery item IDs (Forever-new items start near 247000)
+# Classic recipes that no item teaches but that no Classic trainer taught either (quest rewards, or never available):
+NOT_TRAINER = {
+    11452: "Restorative Potion: quest reward",
+    14891: "Smelt Dark Iron: taught in Blackrock Depths after a quest",
+    19435: "Mooncloth Boots: quest reward",
+    22813: "Gordok Ogre Suit (Tailoring): Dire Maul quest",
+    22815: "Gordok Ogre Suit (Leatherworking): Dire Maul quest",
+    23486: "Dimensional Ripper - Everlook: Goblin Engineering quest",
+    23489: "Ultrasafe Transporter - Gadgetzan: Gnomish Engineering quest",
+    12719: "Explosive Arrow: never available in Classic",
+    12720: "Goblin \"Boom\" Box: never available in Classic",
+    12722: "Goblin Radio: never available in Classic",
+    12900: "Mobile Alarm: never available in Classic",
+    12904: "Gnomish Ham Radio: never available in Classic",
+}
+RECIPE_DECODER = """
+local LINES = {}
+for sl in pairs(ENC) do LINES[#LINES + 1] = sl end
+table.sort(LINES)
+WC.RECIPE_LINES = LINES
+
+local tonumber, gmatch, find, rawget, rawset = tonumber, string.gmatch, string.find, rawget, rawset
+
+local function decode(s)
+  local rows, f = {}, {}
+  for rec in gmatch(s, "[^\\n]+") do
+    local n = 0
+    for v in gmatch(rec .. ",", "([^,]*),") do n = n + 1; f[n] = v end
+    local id = tonumber(f[1])
+    if id and n >= 13 then
+      local r = {}
+      for i = 14, n do r[i - 13] = tonumber(f[i]) end
+      local row = { s = tonumber(f[2]), y = tonumber(f[3]), g = tonumber(f[4]), r = r, t = f[8], ab = tonumber(f[12]) }
+      if f[5] ~= "" then row.o = tonumber(f[5]) end
+      if f[6] ~= "" then row.n1, row.n2 = tonumber(f[6]), tonumber(f[7]) end
+      if f[9] ~= "" then row.ri = tonumber(f[9]) end
+      if f[10] ~= "" then row.se = 1 end
+      if f[11] ~= "" then row.su = tonumber(f[11]) end
+      if f[13] ~= "" then row.a = 1 end
+      rows[id] = row
+    end
+  end
+  return rows
+end
+
+WC.RECIPES = setmetatable({}, { __index = function(t, sl)
+  local s = ENC[sl]
+  if not s then return nil end
+  local rows = decode(s)
+  ENC[sl] = nil
+  rawset(t, sl, rows)
+  return rows
+end })
+
+-- the skill line of a recipe, without decoding anything; nil if unknown
+function WC.RecipeLine(recipeID)
+  if not recipeID then return nil end
+  local R, key = WC.RECIPES, "\\n" .. recipeID .. ","
+  for i = 1, #LINES do
+    local sl = LINES[i]
+    local rows = rawget(R, sl)
+    if rows then
+      if type(rows) == "table" and rows[recipeID] then return sl end
+    elseif ENC[sl] and find(ENC[sl], key, 1, true) then
+      return sl
+    end
+  end
+  for sl, rows in pairs(R) do            -- lines put in at runtime
+    if type(rows) == "table" and rows[recipeID] then return sl end
+  end
+  return nil
+end
+"""
+SKILLUP_SOURCE = "https://wowinterface.com/downloads/info9529-TradeskillAdvice.html"
+SKILLUP_NOTE = ("orange (skill < y) 1; yellow/green (y <= skill < g) (g - skill) / (g - y); grey (skill >= g) 0. "
+                "Empirical (TradeskillAdvice: 'rate = (current skill-grey) / (yellow-grey)'); its averages over the "
+                "yellow and green halves, 75% and 25%, are the vmangos server defaults (SkillChance.Yellow/Green).")
+
+
+def build_recipes(args, sparse, items, stats):
+    db = args.db
+    names = {to_int(r["ID"]): r["Name_lang"] for r in read_csv(os.path.join(db, "SpellName.csv"))}
+    reagents = {}
+    for r in read_csv(os.path.join(db, "SpellReagents.csv")):
+        lst = []
+        for k in range(8):
+            item, cnt = to_int(r.get("Reagent_%d" % k)), to_int(r.get("ReagentCount_%d" % k))
+            if item > 0 and cnt > 0:
+                lst += [item, cnt]
+        reagents.setdefault(to_int(r["SpellID"]), lst)
+    creates, learns = {}, collections.defaultdict(set)
+    for r in sorted(read_csv(os.path.join(db, "SpellEffect.csv")), key=lambda r: (to_int(r["SpellID"]), to_int(r["EffectIndex"]))):
+        if to_int(r["DifficultyID"]) != 0:
+            continue
+        sp, eff = to_int(r["SpellID"]), to_int(r["Effect"])
+        if eff == EFFECT_CREATE_ITEM and to_int(r["EffectItemType"]) > 0 and sp not in creates:
+            creates[sp] = (to_int(r["EffectItemType"]), float(r["EffectBasePointsF"] or 0), float(r["Variance"] or 0))
+        elif eff == EFFECT_LEARN_SPELL and to_int(r["EffectTriggerSpell"]) > 0:
+            learns[sp].add(to_int(r["EffectTriggerSpell"]))
+    # recipe items: an item effect with trigger "teaches" names the recipe spell, or casts a spell that learns it
+    effects = {to_int(r["ID"]): r for r in read_csv(os.path.join(db, "ItemEffect.csv"))}
+    teachers, dropped_teachers = collections.defaultdict(set), set()
+    unreleased = collections.defaultdict(set)    # teaching items without an ItemSparse row in this build
+    for r in read_csv(os.path.join(db, "ItemXItemEffect.csv")):
+        e = effects.get(to_int(r["ItemEffectID"]))
+        if not e:
+            continue
+        item, sp = to_int(r["ItemID"]), to_int(e["SpellID"])
+        taught = set(learns.get(sp, ()))
+        if to_int(e["TriggerType"]) == TRIGGER_LEARN:
+            taught.add(sp)
+        if not taught:
+            continue
+        s = sparse.get(item)
+        if s and to_int(s["Flags_0"]) & 0xFFFFFFFF & ITEM_FLAG_DEPRECATED:
+            dropped_teachers.add(item)        # deprecated: nobody can get it
+            continue
+        if not s:
+            dropped_teachers.add(item)
+            if not SOD_ITEM_IDS[0] <= item < SOD_ITEM_IDS[1]:   # SoD items are not Forever content at all
+                for t in taught:
+                    unreleased[t].add(item)
+            continue
+        for t in taught:
+            teachers[t].add(item)
+
+    out = collections.defaultdict(dict)
+    skipped = collections.Counter()
+    kinds = collections.Counter()
+    above_yellow, no_output_item = [], []
+    for r in sorted(read_csv(os.path.join(db, "SkillLineAbility.csv")), key=lambda r: to_int(r["ID"])):
+        sl, sp = to_int(r["SkillLine"]), to_int(r["Spell"])
+        if sl not in PROFESSIONS or sp in out[sl]:
+            continue
+        y, g = to_int(r["TrivialSkillLineRankLow"]), to_int(r["TrivialSkillLineRankHigh"])
+        acq = to_int(r["AcquireMethod"])
+        reag, cr = reagents.get(sp, []), creates.get(sp)
+        if not reag and not cr:
+            continue                           # profession ranks, Disenchant, gathering abilities
+        if sp not in names:
+            skipped["spell removed from the client (no SpellName)"] += 1
+            continue
+        if acq == ACQUIRE_RETIRED:
+            skipped["retired (AcquireMethod 3)"] += 1
+            continue
+        if y == 0 and g == 0:
+            skipped["no skill range"] += 1
+            continue
+        rec = {"y": y, "g": g, "ab": to_int(r["ID"])}
+        teach = teachers.get(sp)
+        if teach:
+            ri = sorted(teach, key=lambda i: (to_int(sparse[i]["RequiredSkill"]) != sl,
+                                              to_int(sparse[i]["RequiredSkillRank"]), i))[0]
+            rec.update(t="i", ri=ri, s=max(1, to_int(sparse[ri]["RequiredSkillRank"])))
+            kind = "item"
+        elif acq == ACQUIRE_ON_SKILL_LEARN:
+            rec.update(t="t", s=max(1, to_int(r["MinSkillLineRank"])), a=1)
+            kind = "auto"
+        elif unreleased.get(sp):
+            # taught by a recipe item this build doesn't have (a Classic plan Forever dropped, or a new one not out yet)
+            rec.update(t="?", ri=min(unreleased[sp]), s=y, se=1)
+            kind = "item not in this build"
+        elif sp in NOT_TRAINER or SOD_SPELL_IDS[0] <= sp < SOD_SPELL_IDS[1]:
+            rec.update(t="?", s=y, se=1)
+            kind = "unknown"
+        else:
+            rec.update(t="t", s=y, se=1)       # trainer: the client has no trainer requirement -> estimate s = y
+            kind = "trainer"
+        if rec["s"] > args.max_skill:
+            continue
+        if cr:
+            item, bp, var = cr
+            if item not in sparse:
+                # the item has no ItemSparse row in this build (unreleased/encrypted content or removed): leave out
+                no_output_item.append((sl, sp, names[sp], item))
+                continue
+            bp = bp if bp > 0 else 1.0
+            n1 = max(1, int(math.ceil(bp * (1 - var / 2) - 1e-6)))
+            n2 = max(n1, int(math.floor(bp * (1 + var / 2) + 1e-6)))
+            rec.update(o=item, n1=n1, n2=n2)
+        if rec["s"] > y:
+            above_yellow.append((sl, sp, names[sp], rec["s"], y, g))
+        rec["r"] = reag
+        su = to_int(r["NumSkillUps"], 1)
+        if su != 1:
+            rec["su"] = su
+        rec["name"] = names[sp]
+        out[sl][sp] = rec
+        kinds[kind] += 1
+    out = {sl: v for sl, v in out.items() if v}
+    stats["recipes_by_line"] = {sl: len(v) for sl, v in sorted(out.items())}
+    stats["recipes_kinds"] = dict(kinds)
+    stats["recipes_skipped"] = dict(skipped)
+    stats["recipes_above_yellow"] = above_yellow
+    stats["recipes_no_output_item"] = no_output_item
+    stats["recipes_dropped_teachers"] = len(dropped_teachers)
+    return out
+
+
+def write_recipes(path, recipes, args, stats):
+    L = []
+    L.append("local addonName, WC = ...")
+    L.append("")
+    L.append("-- Getrich recipe data. GENERATED by tools/gen_data.py on %s -- do not edit by hand." % args.date)
+    L.append("-- WoW Forever client build %s (DB2 tables from wago.tools): SkillLineAbility (skill line, thresholds,"
+             % args.build)
+    L.append("--   NumSkillUps, AcquireMethod), SpellReagents, SpellEffect (24 create item: EffectBasePointsF +- Variance/2;")
+    L.append("--   36 learn spell), SpellName, ItemEffect + ItemXItemEffect + ItemSparse (recipe items).")
+    L.append("-- WC.RECIPES[skillLine][recipeID] (recipeID = spell ID, as C_TradeSkillUI uses):")
+    L.append("--   s learn skill (orange from s), y yellow, g grey (green from floor((y + g) / 2)), o output item (nil for")
+    L.append("--   enchants), n1-n2 yield per craft (both omitted when 1), r = { itemID, qty, itemID, qty, ... },")
+    L.append("--   ab = SkillLineAbility ID, su = skill-ups per craft (omitted = 1).")
+    L.append("--   t = \"i\" taught by the recipe item ri (s = the item's required skill),")
+    L.append("--       \"t\" learned with the profession (a = 1: AcquireMethod 1, s exact, nothing to train) or from a")
+    L.append("--           trainer (s estimated, se = 1),")
+    L.append("--       \"?\" no source in this build: its recipe item ri has no ItemSparse row (dropped or not released yet),")
+    L.append("--           or no item and no known trainer (quest rewards, Season of Discovery spells); s estimated.")
+    L.append("--   se = 1: s is a guess. The client has no trainer requirements, so s = y (yellow): Classic trainers taught")
+    L.append("--       439 of 440 checked recipes at or below their Classic yellow (median 20 points below). Forever moved")
+    L.append("--       many yellows and some requirements (Bronze Warhammer was made at 110 in Forever, yellow 155).")
+    L.append("--   s can be above y when a recipe item asks more skill than Forever's lowered yellow (the recipe is yellow")
+    L.append("--       or green when learned); y == g happens (no yellow/green phase).")
+    L.append("-- Left out: retired recipes (AcquireMethod 3, spells without a name), ranks/abilities without reagents or")
+    L.append("--   output, recipes whose product has no ItemSparse row in this build (%d: unreleased or removed items),"
+             % len(stats["recipes_no_output_item"]))
+    L.append("--   learn skill > %d. Recipe items flagged deprecated or missing from ItemSparse teach nothing."
+             % args.max_skill)
+    L.append("-- Contents: %s." % ", ".join("%s %d" % (PROFESSIONS[sl], n) for sl, n in stats["recipes_by_line"].items()))
+    L.append("")
+    L.append("WC.SKILLUP = {")
+    L.append("  formula = \"classic\",")
+    L.append("  source = %s," % lua_str(SKILLUP_SOURCE))
+    L.append("  note = %s," % lua_str(SKILLUP_NOTE))
+    L.append("}")
+    L.append("")
+    # Lazy data: one string per skill line, one record per line, decoded the first time WC.RECIPES[skillLine] is
+    # read (about 90 KB of strings stay in memory instead of 1.3 MB of tables).
+    L.append("-- Storage: each skill line is a string (one recipe per line) decoded into the tables above the first time")
+    L.append("-- WC.RECIPES[skillLine] is read; the string is dropped then. pairs(WC.RECIPES) lists only decoded lines:")
+    L.append("-- iterate WC.RECIPE_LINES, and find a recipe's skill line with WC.RecipeLine(recipeID) (no decoding).")
+    L.append("-- Record: id,s,y,g,o,n1,n2,t,ri,se,su,ab,a,reagent,qty,reagent,qty,... (empty field = nil).")
+    L.append("")
+    L.append("local ENC = {}")
+    for sl in sorted(recipes):
+        L.append("ENC[%d] = [=[ -- %s" % (sl, PROFESSIONS[sl]))
+        for sp in sorted(recipes[sl]):
+            rec = recipes[sl][sp]
+            two = (rec.get("n1"), rec.get("n2")) if "o" in rec and (rec["n1"], rec["n2"]) != (1, 1) else ("", "")
+            f = [sp, rec["s"], rec["y"], rec["g"], rec.get("o", ""), two[0], two[1], rec["t"], rec.get("ri", ""),
+                 1 if rec.get("se") else "", rec.get("su", ""), rec["ab"], 1 if rec.get("a") else ""] + list(rec["r"])
+            L.append(",".join(str(x) for x in f))
+        L.append("]=]")
+    L.append("")
+    L.append(RECIPE_DECODER.strip("\n"))
+    L.append("")
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        f.write("\n".join(L))
+
+
+# ---------------------------------------------------------------------------------------------------------------
 # --check: load both files in Lua 5.1 (lupa) and verify them
 
-def check(out_dir):
+def check(out_dir, db=None, sv_paths=(), expected=None):
     try:
         import lupa.lua51 as lupa_mod
     except ImportError:
@@ -863,10 +1145,10 @@ def check(out_dir):
     globals_of = lua.eval("function() local n = {} for k in pairs(_G) do n[#n + 1] = tostring(k) end return table.concat(n, ' ') end")
     loader = lua.eval("function(s, n) local f, e = loadstring(s, n) if not f then error(e) end return f end")
     before = set(globals_of().split())
-    for name in ("DataVendor.lua", "DataDisenchant.lua"):
+    for name in ("DataVendor.lua", "DataDisenchant.lua", "DataRecipes.lua"):
         with open(os.path.join(out_dir, name), encoding="utf-8") as f:
             src = f.read()
-        loader(src, "@" + name)("WaylaidCrate", WC)
+        loader(src, "@" + name)("Getrich", WC)
     leaked = set(globals_of().split()) - before
     problems = []
 
@@ -940,12 +1222,159 @@ def check(out_dir):
     ok(DE.noDE[2589] is None, "Linen Cloth must not be in noDE")
     ok(DE.mats[247786] is None, "Mote of Magic is not a disenchant output")
     ok(not leaked, "files created globals: %s" % sorted(leaked))
+    nrec, notes = check_recipes(lua, WC, ok, db, sv_paths, expected)
     if problems:
         for p in problems:
             print("CHECK FAILED:", p)
         sys.exit(1)
     nnode = len(list(DE.noDE.keys()))
-    print("check OK: %d vendor items, %d DE bands, %d noDE items, %d mats" % (nv, len(bands), nnode, len(outs)))
+    for n in notes:
+        print("note:", n)
+    print("check OK: %d vendor items, %d DE bands, %d noDE items, %d mats, %d recipes"
+          % (nv, len(bands), nnode, len(outs), nrec))
+
+
+def check_recipes(lua, WC, ok, db, sv_paths, expected=None):
+    """WC.RECIPES / WC.SKILLUP checks: decodes every skill line (lazy storage) and, when the generator ran in the
+    same call, compares every row with the source data. Returns (number of recipes, notes)."""
+    R, SU, notes = WC.RECIPES, WC.SKILLUP, []
+    ok(R is not None and SU is not None, "WC.RECIPES / WC.SKILLUP missing")
+    lines = list(WC.RECIPE_LINES.values()) if WC.RECIPE_LINES is not None else []
+    ok(lines == sorted(lines) and len(lines) > 0, "WC.RECIPE_LINES must list the skill lines in order")
+    raw = lua.eval("function(t) local n = 0 for _ in pairs(t) do n = n + 1 end return n end")
+    ok(raw(R) == 0, "WC.RECIPES must start with no decoded line (lazy)")
+    probe = {sl: next(iter(sorted(expected[sl]))) for sl in expected} if expected else {}
+    for sl, sp in probe.items():
+        ok(WC.RecipeLine(sp) == sl, "WC.RecipeLine(%d) should be %d without decoding" % (sp, sl))
+    ok(raw(R) == 0, "WC.RecipeLine must not decode")
+    ok(WC.RecipeLine(999999999) is None, "WC.RecipeLine of an unknown recipe")
+    if expected is not None:
+        ok(lines == sorted(expected), "WC.RECIPE_LINES differs from the source data")
+    mismatch = []
+    for sl in lines:
+        line = R[sl]                                    # decodes
+        ok(line is not None and raw(R) >= 1, "line %s did not decode" % sl)
+        if expected is None or line is None:
+            continue
+        want = expected.get(sl, {})
+        got_ids = set(line.keys())
+        if got_ids != set(want):
+            mismatch.append("%d: ids differ (%d decoded, %d in source)" % (sl, len(got_ids), len(want)))
+            continue
+        for sp, rec in want.items():
+            r = line[sp]
+            mine = {k: r[k] for k in ("s", "y", "g", "o", "n1", "n2", "t", "ri", "se", "su", "ab", "a") if r[k] is not None}
+            mine["r"] = list(r.r.values())
+            src = {k: rec[k] for k in ("s", "y", "g", "o", "t", "ri", "se", "su", "ab", "a") if k in rec}
+            if "o" in rec and (rec["n1"], rec["n2"]) != (1, 1):
+                src["n1"], src["n2"] = rec["n1"], rec["n2"]
+            src["r"] = list(rec["r"])
+            if mine != src and len(mismatch) < 10:
+                mismatch.append("%d/%d: decoded %r, source %r" % (sl, sp, mine, src))
+    ok(not mismatch, "decoded WC.RECIPES differs from the source data: %s" % mismatch)
+    ok(raw(R) == len(lines), "every line should now be decoded")
+    ok(SU.formula == "classic" and str(SU.source).startswith("https://"), "WC.SKILLUP formula/source")
+    sparse = None
+    if db and os.path.exists(os.path.join(db, "ItemSparse.csv")):
+        sparse = {to_int(r["ID"]) for r in read_csv(os.path.join(db, "ItemSparse.csv"))}
+    n, above = 0, 0
+    for sl in lines:
+        line = R[sl]
+        ok(sl in PROFESSIONS, "unknown skill line %r" % (sl,))
+        for sp, r in line.items():
+            n += 1
+            tag = "recipe %s/%s" % (sl, sp)
+            ok(all(isinstance(v, int) for v in (r.s, r.y, r.g, r.ab)), tag + ": s/y/g/ab must be integers")
+            ok(1 <= r.s and r.y <= r.g, tag + ": needs 1 <= s and y <= g (s %s y %s g %s)" % (r.s, r.y, r.g))
+            if r.s > r.y:
+                ok(r.t == "i", tag + ": s > y only for recipe items")
+                above += 1
+            ok(r.t in ("t", "i", "?"), tag + ": bad t")
+            ok(r.t != "i" or r.ri is not None, tag + ": t == i needs ri")
+            ok(r.ri is None or r.t in ("i", "?"), tag + ": ri only for t == i or ?")
+            ok(r.se in (None, 1) and not (r.se and r.t == "i"), tag + ": se only for estimated t/? rows")
+            ok(r.se != 1 or r.s == r.y, tag + ": estimated s must be y")
+            ok(r.a is None or (r.a == 1 and r.t == "t" and r.se is None and r.ri is None), tag + ": a = 1 only on exact t rows")
+            rr = list(r.r.values()) if r.r is not None else None
+            ok(rr is not None and len(rr) % 2 == 0 and all(isinstance(v, int) and v > 0 for v in rr),
+               tag + ": r must be a flat even-length list of positive integers")
+            ok((r.n1 is None) == (r.n2 is None), tag + ": n1/n2 come together")
+            if r.n1 is not None:
+                ok(r.o is not None and 1 <= r.n1 <= r.n2 and (r.n1, r.n2) != (1, 1), tag + ": bad n1/n2")
+            ok(r.o is not None or rr, tag + ": neither output nor reagents")
+            ok(r.su is None or (isinstance(r.su, int) and r.su >= 0 and r.su != 1), tag + ": bad su")
+            if sparse is not None and r.o is not None:
+                ok(r.o in sparse, tag + ": output %s not in ItemSparse" % r.o)
+            if sparse is not None and r.ri is not None:
+                ok((r.ri in sparse) == (r.t == "i"), tag + ": recipe item %s: in ItemSparse iff t == i" % r.ri)
+    notes.append("%d recipes; %d recipe-item recipes ask more skill than their yellow" % (n, above))
+
+    def rec(sl, sp):
+        line = R[sl]
+        return line[sp] if line is not None else None
+
+    def same(r, want):
+        return r is not None and all((r[k] if not isinstance(v, list) else list(r[k].values())) == v
+                                     for k, v in want.items())
+
+    spots = [  # (skill line, recipe, expected fields): each checked against Wowhead Forever XML or wowseer.gg
+        (197, 2963, {"t": "t", "a": 1, "s": 1, "y": 25, "g": 50, "o": 2996, "r": [2589, 2]}),  # Bolt of Linen Cloth
+        (197, 7629, {"t": "i", "ri": 6271, "s": 35}),                                       # Red Linen Vest
+        (197, 2389, {"t": "i", "ri": 2598, "s": 25}),                                       # Red Linen Robe
+        (164, 2661, {"t": "t", "a": None, "o": 2851, "r": [2840, 6]}),                      # Copper Chain Belt
+        (164, 2667, {"t": "i", "ri": 2881, "s": 55}),                                       # Runed Copper Breastplate
+        (171, 2335, {"t": "i", "ri": 2555, "s": 60, "r": [2452, 1, 2450, 1, 3371, 1]}),     # Swiftness Potion
+        (171, 7837, {"o": 6371, "n1": 2, "n2": 2}),                                         # Fire Oil makes 2
+        (185, 2541, {"t": "t", "o": 2684}),                                                 # Coyote Steak
+        (185, 2538, {"t": "t", "s": 1}),                                                    # Charred Wolf Meat (auto)
+        (129, 3276, {"t": "t", "y": 50, "g": 100, "o": 2581, "r": [2589, 2]}),              # Heavy Linen Bandage
+        (129, 1244431, {"t": "t", "o": 118, "r": [3371, 1, 2678, 1, 2447, 1]}),             # Minor Healing Potion
+        (333, 7418, {"t": "t", "s": 1, "o": None, "r": [247786, 1]}),                       # Ench. Bracer - Inferior Stamina
+        (333, 7771, {"t": "t", "r": [10940, 2]}),                                           # deprecated formula ignored
+        (202, 3962, {"n1": 2, "n2": 4}),                                                    # Iron Grenade 3 +- variance
+        (202, 3946, {"n1": 1, "n2": 5}),                                                    # Heavy Dynamite
+    ]
+    for sl, sp, want in spots:
+        ok(same(rec(sl, sp), want), "spot check %d/%d: want %r" % (sl, sp, want))
+    ok(rec(171, 2330) is None, "retired Alchemy Minor Healing Potion 2330 must be left out")
+
+    # recipes captured in the game (old Getrich characters[].recipes or GetrichDB.recipes) against the table
+    captured = []
+    for path in sv_paths or ():
+        g = read_savedvariables(path)
+        gr = g.get("GetrichDB") if isinstance(g.get("GetrichDB"), dict) else {}
+        for c in (gr.get("characters") or {}).values():
+            for rid, x in ((c or {}).get("recipes") or {}).items():
+                if isinstance(x, dict):
+                    regs = sorted((to_int(v.get("itemID")), to_int(v.get("quantity")))
+                                  for v in (x.get("reagents") or {}).values() if isinstance(v, dict))
+                    captured.append((to_int(x.get("professionID")), to_int(rid), regs,
+                                     to_int(x.get("minOutput"), 1), to_int(x.get("maxOutput"), 1), x.get("name")))
+        for char in (gr.get("recipes") or {}).values():
+            for rid, x in (char or {}).items():
+                if isinstance(x, dict):
+                    regs = sorted((to_int(v[1]), to_int(v[2])) for v in (x.get("r") or {}).values()
+                                  if isinstance(v, dict) and 1 in v and 2 in v)
+                    captured.append((to_int(x.get("p")), to_int(rid), regs, to_int(x.get("y1"), 1),
+                                     to_int(x.get("y2"), 1), x.get("n")))
+    if captured:
+        missing, diff = [], []
+        for sl, sp, regs, y1, y2, name in captured:
+            r = rec(sl, sp) if R[sl] is not None else None
+            if r is None:
+                missing.append("%s %d" % (name, sp))
+                continue
+            rr = list(r.r.values())
+            mine = sorted(zip(rr[0::2], rr[1::2]))
+            yields = ((r.n1 or 1), (r.n2 or 1)) if r.o is not None else (y1, y2)
+            if mine != regs or yields != (y1, y2):
+                diff.append("%s %d: game %s x%d-%d, table %s x%d-%d" % ((name, sp, regs, y1, y2, mine) + yields))
+        ok(not diff, "captured recipes differ from WC.RECIPES: %s" % diff[:10])
+        lines = collections.Counter(PROFESSIONS.get(c[0], c[0]) for c in captured)
+        notes.append("%d recipes captured in game (%s): %d match reagents and yields, %d not in WC.RECIPES %s"
+                     % (len(captured), ", ".join("%s %d" % kv for kv in sorted(lines.items())),
+                        len(captured) - len(missing) - len(diff), len(missing), missing[:10]))
+    return n, notes
 
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -957,7 +1386,7 @@ def main():
     ap.add_argument("--download", action="store_true")
     ap.add_argument("--sv", action="append", default=[])
     ap.add_argument("--pfquest")
-    ap.add_argument("--out", default=os.path.join(HERE, "..", "WaylaidCrate"))
+    ap.add_argument("--out", default=os.path.join(HERE, "..", "Getrich"))
     ap.add_argument("--date", default=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d"))
     ap.add_argument("--max-skill", type=int, default=300)
     ap.add_argument("--per-side", type=int, default=3)
@@ -965,6 +1394,7 @@ def main():
     ap.add_argument("--quiet", action="store_true")
     args = ap.parse_args()
     out = os.path.normpath(args.out)
+    recipes = None
 
     if args.db:
         if args.download:
@@ -980,6 +1410,8 @@ def main():
         de = build_de(args, sparse, items, stats)
         write_vendor(os.path.join(out, "DataVendor.lua"), vendor, sparse, args, stats)
         write_de(os.path.join(out, "DataDisenchant.lua"), de, sparse, args, stats)
+        recipes = build_recipes(args, sparse, items, stats)
+        write_recipes(os.path.join(out, "DataRecipes.lua"), recipes, args, stats)
         if not args.quiet:
             print("WC.VENDOR: %d items = %d seen in the client + %d Classic-vendor reagents"
                   % (stats["vendor_total"], stats["seen"], stats["classic"]))
@@ -1000,10 +1432,21 @@ def main():
                   % (stats["bands"], ", ".join(stats["bands_est"]) or "-", stats["noDE"], stats["mats"]))
             if stats["bands_unknown"]:
                 print("  bands without a Classic table (skipped): %s" % stats["bands_unknown"])
+            print("WC.RECIPES: %d recipes: %s" % (sum(stats["recipes_by_line"].values()), ", ".join(
+                "%s %d" % (PROFESSIONS[sl], n) for sl, n in stats["recipes_by_line"].items())))
+            print("  source: %s" % stats["recipes_kinds"])
+            print("  left out: %s; recipe items not in ItemSparse or deprecated: %d"
+                  % (stats["recipes_skipped"], stats["recipes_dropped_teachers"]))
+            print("  learn skill above yellow (recipe item asks more than Forever's yellow): %d"
+                  % len(stats["recipes_above_yellow"]))
+            for m in stats["recipes_above_yellow"]:
+                print("    %d %d %s: s %d y %d g %d" % m)
+            print("  left out, output item has no ItemSparse row (unreleased or removed): %d"
+                  % len(stats["recipes_no_output_item"]))
     elif not args.check:
         ap.error("--db is required to generate (or use --check alone)")
     if args.check:
-        check(out)
+        check(out, args.db, args.sv, recipes if args.db else None)
 
 
 if __name__ == "__main__":

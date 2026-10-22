@@ -3,8 +3,8 @@ local addonName, WC = ...
 -- Disenchanting: what an item disenchants into, what that is worth at current AH prices, and a recorder for the
 -- player's own disenchants. The data table WC.DE (bands, noDE, mats, spell) comes from DataDisenchant.lua; this file
 -- only adds functions to it. Bands come from the Forever client, odds/quantities from Classic, so values are an
--- estimate until the player has recorded DE.MEASURED_MIN real disenchants of a band; then that band uses the
--- measured odds.
+-- estimate until the player has recorded db.deMeasuredCasts (default 20) real disenchants of a band; then that band
+-- uses the measured odds.
 --
 -- Public:
 --   DE:Band(itemID, ilvl)   -> band row | nil, reason ("loading"|"notgear"|"quality"|"nodisenchant"|"noband")
@@ -17,7 +17,7 @@ local addonName, WC = ...
 --   DE:Samples()            -> per-band summary of the recorded disenchants (for the UI)
 --   DE:AddSample(band, totals) / DE:ClearSamples(bandKey|nil)
 -- Sampling (automatic): UNIT_SPELLCAST_* for the Disenchant spell + ITEM_LOCK_CHANGED (which bag item the cast
--- locked) + LOOT_READY/LOOT_OPENED (what it produced). Samples go to WaylaidCrateDB.deSamples[bandKey] =
+-- locked) + LOOT_READY/LOOT_OPENED (what it produced). Samples go to GetrichDB.deSamples[bandKey] =
 -- { casts = n, qty = { [itemID] = total }, hit = { [itemID] = castsContaining }, min = {...}, max = {...}, t = time }.
 
 WC.AddLocale({
@@ -72,7 +72,16 @@ if not DE.mats then
   DE.mats = m
 end
 
-DE.MEASURED_MIN = 20   -- casts per band before the measured odds replace the estimate
+DE.MEASURED_MIN = 20   -- default of the setting deMeasuredCasts: casts per band before measured odds replace the estimate
+if WC.Store and WC.Store.Default then WC.Store:Default("deMeasuredCasts", DE.MEASURED_MIN) end
+
+-- read at use time, so changing the setting takes effect without a reload
+local function measuredMin()
+  local n = type(GetrichDB) == "table" and tonumber(GetrichDB.deMeasuredCasts)
+  if n and n >= 1 then return math.floor(n) end
+  return DE.MEASURED_MIN
+end
+DE.MeasuredMin = function() return measuredMin() end
 DE.WINDOW = 5          -- seconds between the end of the cast and its loot
 
 local LOCK_BEFORE = 2  -- a bag item locked this many seconds before the cast was sent may be its target
@@ -162,16 +171,17 @@ end
 -- ---------------------------------------------------------------------------
 -- expected output per cast
 
-local samples          -- WaylaidCrateDB.deSamples (after DB_READY)
+local samples          -- GetrichDB.deSamples (after DB_READY)
 local expCache = {}    -- [band] = { list, measured, casts }; cleared when a sample is recorded
 
 WC:On("DB_READY", function()
-  local db = WaylaidCrateDB
+  local db = GetrichDB
   if type(db) ~= "table" then return end
   if type(db.deSamples) ~= "table" then db.deSamples = {} end
   samples = db.deSamples
   expCache = {}
 end)
+WC:On("SETTINGS_CHANGED", function() expCache = {} end)   -- deMeasuredCasts may have changed
 
 -- positional fields follow SPEC §3.6 literally ({ itemID, chance, min, max }), named fields are the same values
 local function entry(id, qty, chance, mn, mx)
@@ -185,7 +195,7 @@ function DE:Expected(band)
   local rec = samples and samples[bandKey(band)]
   local casts = (rec and tonumber(rec.casts)) or 0
   local list, measured = {}, false
-  if casts >= DE.MEASURED_MIN and type(rec.qty) == "table" then
+  if casts >= measuredMin() and type(rec.qty) == "table" then
     measured = true
     local hit, mins, maxs = rec.hit or {}, rec.min or {}, rec.max or {}
     local seen = {}
@@ -288,7 +298,7 @@ function DE:AddSample(band, totals)
   end
   rec.t = time and time() or nil
   expCache = {}
-  if rec.casts == DE.MEASURED_MIN then
+  if rec.casts == measuredMin() then
     chat((L.DE_NOW_MEASURED or "%s: %d"):format(self:BandLabel(band), rec.casts))
   end
   WC:Fire("DE_UPDATED", key)
@@ -305,6 +315,7 @@ end
 function DE:Samples()
   local out = {}
   if not samples then return out end
+  local need = measuredMin()
   local byKey = {}
   for _, b in ipairs(DE.bands) do
     if b.q and b.class and b.lo and b.hi then byKey[bandKey(b)] = b end
@@ -323,8 +334,8 @@ function DE:Samples()
       table.sort(outputs, function(a, b) return a.qty > b.qty end)
       local band = byKey[key]
       out[#out + 1] = { key = key, band = band, q = tonumber(q), class = tonumber(class), lo = tonumber(lo),
-        hi = tonumber(hi), casts = casts, measured = casts >= DE.MEASURED_MIN,
-        need = math.max(0, DE.MEASURED_MIN - casts), outputs = outputs, t = rec.t,
+        hi = tonumber(hi), casts = casts, measured = casts >= need,
+        need = math.max(0, need - casts), outputs = outputs, t = rec.t,
         label = band and self:BandLabel(band) or key }
     end
   end

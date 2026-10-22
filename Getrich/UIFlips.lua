@@ -36,7 +36,7 @@ WC.AddLocale({
     FLIP_BEST_NET = "Cost %s · checked %s",
     FLIP_BEST_EMPTY = "After a scan, the best flip shows up here",
     FLIP_BEST_SCANNING = "Scanning… the best flip will show up here",
-    FLIP_EMPTY_NODATA = "No Auction House data yet.\nPress Scan: Waylaid Crate reads the whole Auction House, then checks the cheapest items exactly.",
+    FLIP_EMPTY_NODATA = "No Auction House data yet.\nPress Scan: Getrich reads the whole Auction House, then checks the cheapest items exactly.",
     FLIP_EMPTY_NONE = "Nothing on the Auction House is cheaper than what a vendor pays right now.",
     FLIP_TT_UNIT = "Cheapest AH price (each)",
     FLIP_TT_AVG = "Average price of the cheap ones",
@@ -172,7 +172,7 @@ function UIA.DB()
     local ok, db = pcall(WC.DB, WC)
     if ok and type(db) == "table" then return db end
   end
-  return WaylaidCrateDB or UIA.EMPTY
+  return GetrichDB or UIA.EMPTY
 end
 
 -- register a default setting with Store (only possible while files load, before DB_READY)
@@ -324,10 +324,10 @@ function UIA.Cycler(parent, x, y, label, key, values, textOf, tip)
   end
   function b.wcSync() b:SetText(textOf(values[Current()])) end
   b:SetScript("OnClick", function(_, button)
-    if not WaylaidCrateDB then return end
+    if not GetrichDB then return end
     local i = Current() + ((button == "RightButton") and -1 or 1)
     if i > #values then i = 1 elseif i < 1 then i = #values end
-    WaylaidCrateDB[key] = values[i]
+    GetrichDB[key] = values[i]
     b.wcSync()
     UI:Refresh()
   end)

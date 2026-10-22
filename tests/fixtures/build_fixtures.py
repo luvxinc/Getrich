@@ -167,6 +167,21 @@ def build_api():
         for m in re.finditer(r"^function (ScrollBoxBaseMixin|ScrollBoxListMixin|ScrollBoxMixin):([A-Za-z]+)", open(f, encoding="utf-8").read(), re.M):
             sb.add(m.group(2))
     api["scrollbox_methods"] = sorted(sb)
+    # Settings API (Blizzard_Settings_Shared, loaded for every game type): names defined on the Settings table and the
+    # category / layout / setting mixins
+    st, mix = set(), {}
+    for f in glob.glob(os.path.join(ADDONS, "Blizzard_Settings_Shared", "*.lua")):
+        src = open(f, encoding="utf-8").read()
+        st |= set(re.findall(r"^function Settings\.([A-Za-z]+)", src, re.M))
+        st |= set(re.findall(r"^Settings\.([A-Za-z]+)\s*=", src, re.M))
+        for m in re.finditer(r"^function (SettingsCategoryMixin|SettingsCanvasLayoutMixin|SettingsVerticalLayoutMixin|SettingsLayoutMixin|SettingMixin|AddOnSettingMixin|SettingsSliderOptionsMixin|SettingsControlTextContainerMixin):([A-Za-z]+)", src, re.M):
+            mix.setdefault(m.group(1), set()).add(m.group(2))
+    for f in glob.glob(os.path.join(ADDONS, "Blizzard_Settings_Shared", "*.lua")):
+        src = open(f, encoding="utf-8").read()
+        for m in re.finditer(r"^\s+function (AddOnSettingMixin):([A-Za-z]+)", src, re.M):
+            mix.setdefault(m.group(1), set()).add(m.group(2))
+    api["settings_functions"] = sorted(st)
+    api["settings_mixins"] = {k: sorted(v) for k, v in mix.items()}
     api["source"] = "wow-ui-source branch forever, build 1.60.1.70450 (commit 172a387e3ab85b26e6640d3058d5ec1e6ccd4c63)"
     return api
 
@@ -175,10 +190,10 @@ def build_api():
 def addon_data():
     lua = lua51.LuaRuntime(unpack_returned_tuples=True)
     lua.execute("function GetLocale() return 'enUS' end")
-    run = lua.eval("function(src, name, ns) local f = assert(loadstring(src, name)); return f('WaylaidCrate', ns) end")
+    run = lua.eval("function(src, name, ns) local f = assert(loadstring(src, name)); return f('Getrich', ns) end")
     ns = lua.table()
     for f in ("Util.lua", "Locale.lua", "Data.lua", "Writs.lua"):
-        run(open(os.path.join(REPO, "WaylaidCrate", f), encoding="utf-8").read(), f, ns)
+        run(open(os.path.join(REPO, "Getrich", f), encoding="utf-8").read(), f, ns)
     ids = set(int(k) for k in ns.ITEMS.keys())
     crates = []
     for i in range(1, len(ns.CRATES) + 1):
@@ -225,11 +240,94 @@ INVTYPE = {0: "", 1: "INVTYPE_HEAD", 2: "INVTYPE_NECK", 3: "INVTYPE_SHOULDER", 4
            25: "INVTYPE_THROWN", 26: "INVTYPE_RANGEDRIGHT", 27: "INVTYPE_QUIVER", 28: "INVTYPE_RELIC"}
 
 
+CRAFT_LINES = {171, 164, 333, 202, 165, 197, 185, 129, 186, 356, 182, 393, 40, 755, 773}
+
+
+def recipe_items():
+    """Reagents and products of every crafting recipe (yellow skill <= 300) in the Forever client tables, so the
+    mock's item DB knows everything WC.RECIPES (DataRecipes.lua) can reference."""
+    spells = set()
+    with open(os.path.join(args.db2, "SkillLineAbility.csv"), encoding="utf-8") as f:
+        for d in csv.DictReader(f):
+            if int(d["SkillLine"]) in CRAFT_LINES and 0 < int(d["TrivialSkillLineRankLow"] or 0) <= 300:
+                spells.add(int(d["Spell"]))
+    out = set()
+    with open(os.path.join(args.db2, "SpellReagents.csv"), encoding="utf-8") as f:
+        for d in csv.DictReader(f):
+            if int(d["SpellID"]) in spells:
+                for i in range(8):
+                    r = int(d["Reagent_%d" % i] or 0)
+                    if r > 0:
+                        out.add(r)
+    with open(os.path.join(args.db2, "SpellEffect.csv"), encoding="utf-8") as f:
+        for d in csv.DictReader(f):
+            if int(d["SpellID"]) in spells and int(d["Effect"]) == 24 and int(d["EffectItemType"] or 0) > 0:
+                out.add(int(d["EffectItemType"]))
+    print("recipe items:", len(out), "from", len(spells), "recipes")
+    return out
+
+
+def recipe_spell_names():
+    """spellID -> name of every crafting recipe (yellow skill <= 300) in the Forever client tables: the mock's
+    C_Spell.GetSpellName knows them like the client does (any spell resolves, no cache)."""
+    spells = set()
+    with open(os.path.join(args.db2, "SkillLineAbility.csv"), encoding="utf-8") as f:
+        for d in csv.DictReader(f):
+            if int(d["SkillLine"]) in CRAFT_LINES and 0 < int(d["TrivialSkillLineRankLow"] or 0) <= 300:
+                spells.add(int(d["Spell"]))
+    names = {}
+    with open(os.path.join(args.db2, "SpellName.csv"), encoding="utf-8") as f:
+        for d in csv.DictReader(f):
+            if int(d["ID"]) in spells and d["Name_lang"]:
+                names[int(d["ID"])] = d["Name_lang"]
+    print("recipe spell names:", len(names))
+    return names
+
+
+def codex_sv(lua, gr):
+    """A small, anonymized copy of the old Codex-built Getrich SavedVariables (same top-level schema: schemaVersion,
+    markets, characters, vendor, disenchant, settings; 3 recipes per character, 1 merchant) for the 'old SV is wiped'
+    scenario when the full original is not available."""
+    def ser(v, ind=""):
+        if hasattr(v, "keys"):
+            keys = sorted(v.keys(), key=lambda k: (isinstance(k, str), k))
+            inner = ",\n".join("%s\t[%s] = %s" % (ind, json.dumps(k) if isinstance(k, str) else int(k), ser(v[k], ind + "\t")) for k in keys)
+            return "{\n" + inner + ("\n" if keys else "") + ind + "}"
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        if isinstance(v, (int, float)):
+            return repr(v)
+        return json.dumps(v, ensure_ascii=False)
+    trim = lua.eval("""function(db)
+      local out = { schemaVersion = db.schemaVersion, settings = db.settings, disenchant = db.disenchant, markets = db.markets,
+                    characters = {}, vendor = { observations = {} } }
+      for ck, c in pairs(db.characters) do
+        local n, recs = 0, {}
+        local ids = {}
+        for rid in pairs(c.recipes) do ids[#ids + 1] = rid end
+        table.sort(ids)
+        for _, rid in ipairs(ids) do if n < 3 then recs[rid] = c.recipes[rid]; n = n + 1 end end
+        out.characters[ck] = { professions = c.professions, recipes = recs }
+      end
+      local keys = {}
+      for k in pairs(db.vendor.observations) do keys[#keys + 1] = k end
+      table.sort(keys)
+      out.vendor.observations[keys[1]] = db.vendor.observations[keys[1]]
+      return out
+    end""")
+    text = "GetrichDB = " + ser(trim(gr)) + "\n"
+    path = os.path.join(HERE, "sv_getrich_codex.lua")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(anonymize(text))
+    print("wrote", path, os.path.getsize(path), "bytes")
+
+
 def main():
     dump("forever_api.json", build_api())
 
     ids, crates, writs = addon_data()
     ids |= set(DE_MATS) | set(EXTRA_GEAR)
+    ids |= recipe_items()
 
     # order books (WaylaidCrate SV)
     _, wc = load_sv(os.path.join(args.sv, "WaylaidCrate.lua"), "WaylaidCrateDB")
@@ -242,7 +340,7 @@ def main():
     ids |= set(books)
 
     # recipes + merchant scans (Getrich SV)
-    _, gr = load_sv(os.path.join(args.sv, "Getrich.lua"), "GetrichDB")
+    grl, gr = load_sv(os.path.join(args.sv, "Getrich.lua"), "GetrichDB")
     chars = {}
     for ck in gr.characters.keys():
         c = gr.characters[ck]
@@ -263,6 +361,17 @@ def main():
             for rg in reag:
                 ids.add(rg[0])
         chars[guid] = {"professions": profs, "recipes": recipes}
+    # skill-up data from the client tables (SkillLineAbility): y = yellow, g = grey, su = skill-ups, ab = ability ID
+    sla = {}
+    with open(os.path.join(args.db2, "SkillLineAbility.csv"), encoding="utf-8") as f:
+        for d in csv.DictReader(f):
+            sla[(int(d["SkillLine"]), int(d["Spell"]))] = d
+    for ch in chars.values():
+        for rid, r in ch["recipes"].items():
+            d = sla.get((r["skillLine"], rid))
+            if d and int(d["TrivialSkillLineRankHigh"] or 0) > 0:
+                r["y"], r["g"] = int(d["TrivialSkillLineRankLow"]), int(d["TrivialSkillLineRankHigh"])
+                r["su"], r["ab"] = max(1, int(d["NumSkillUps"] or 1)), int(d["ID"])
     merchants = []
     for ok in gr.vendor.observations.keys():
         o = gr.vendor.observations[ok]
@@ -302,10 +411,12 @@ def main():
                       "flags": int(s["Flags_0"]) & 0xFFFFFFFF, "icon": int(it["IconFileDataID"])}
     print("items:", len(items), "missing from Forever data:", missing)
     dump("items.json", {"source": "wago.tools DB2 ItemSparse+Item, build 1.60.1.70450", "items": items, "missing": missing})
-    dump("recipes.json", {"source": "Getrich SavedVariables (user's Forever beta characters, builds 70425/70450)", "chars": chars})
+    dump("recipes.json", {"source": "Getrich SavedVariables (user's Forever beta characters, builds 70425/70450); spells: "
+                                     "SkillLineAbility + SpellName, build 70450", "chars": chars, "spells": recipe_spell_names()})
     dump("orderbooks.json", {"source": "WaylaidCrate SavedVariables results (user's Forever beta AH scans, Oct 2026)",
                              "books": books, "status": statuses,
                              "crates": crates, "writs": writs})
+    codex_sv(grl, gr)
     dump("merchants.json", {"source": "Getrich SavedVariables vendor.observations (merchant API scans)", "merchants": merchants})
 
 

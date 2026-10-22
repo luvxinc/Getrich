@@ -24,20 +24,26 @@ WC.AddLocale({
   enUS = {
     PROFIT_SCAN_LABEL  = "Crafting prices",
     PROFIT_SCAN_PHASE  = "Materials and products",
-    PROFIT_NO_RECIPES  = "No recipes yet: open each profession window once so Waylaid Crate can read your recipes.",
+    PROFIT_NO_RECIPES  = "No recipes yet: open each profession window once so Getrich can read your recipes.",
+    PROFIT_RECIPE_FMT  = "Recipe %d",
   },
   zhCN = {
     PROFIT_SCAN_LABEL  = "制造价格",
     PROFIT_SCAN_PHASE  = "材料和成品",
-    PROFIT_NO_RECIPES  = "还没有配方：请把每个专业窗口打开一次，Waylaid Crate 才能读取你的配方。",
+    PROFIT_NO_RECIPES  = "还没有配方：请把每个专业窗口打开一次，Getrich 才能读取你的配方。",
+    PROFIT_RECIPE_FMT  = "配方 %d",
   },
   zhTW = {
     PROFIT_SCAN_LABEL  = "製造價格",
     PROFIT_SCAN_PHASE  = "材料和成品",
-    PROFIT_NO_RECIPES  = "還沒有配方：請把每個專業視窗打開一次，Waylaid Crate 才能讀取你的配方。",
+    PROFIT_NO_RECIPES  = "還沒有配方：請把每個專業視窗打開一次，Getrich 才能讀取你的配方。",
+    PROFIT_RECIPE_FMT  = "配方 %d",
   },
 })
 local L = WC.L
+
+-- setting read by Craft(): also list trainer recipes the character hasn't learned
+if WC.Store and WC.Store.Default then WC.Store:Default("craftShowUnlearned", false) end
 
 local pairs, type, tonumber, pcall, next = pairs, type, tonumber, pcall, next
 local tsort = table.sort
@@ -125,7 +131,7 @@ local function DB()
     local ok, db = pcall(WC.DB, WC)
     if ok and type(db) == "table" then return db end
   end
-  if type(WaylaidCrateDB) == "table" then return WaylaidCrateDB end
+  if type(GetrichDB) == "table" then return GetrichDB end
   return nil
 end
 
@@ -347,9 +353,17 @@ local function FillEntry(e, recipeID, r, ench, isMe)
   e.est = est
   FillCash(e, isMe)
 
-  -- product
+  -- product (none for enchants: only the leveling planner fills such entries)
   local out = e.itemID
-  local sell = Sell(out)
+  local sell
+  if out then
+    sell = Sell(out)
+    local ahUnit, ahTime, ahSource = UnitPrice(out)
+    e.ahUnit, e.ahTime, e.ahSource = ahUnit, ahTime, ahSource
+    e.ah = ahUnit and ahUnit * yield * (1 - (WC.AH_CUT or 0.05)) or nil
+  else
+    e.ahUnit, e.ahTime, e.ahSource, e.ah = nil, nil, nil, nil
+  end
   e.sell = sell
   if sell then
     e.npc = sell * yield
@@ -357,12 +371,9 @@ local function FillEntry(e, recipeID, r, ench, isMe)
   else
     e.npc, e.npcNoBuy = nil, nil
   end
-  local ahUnit, ahTime, ahSource = UnitPrice(out)
-  e.ahUnit, e.ahTime, e.ahSource = ahUnit, ahTime, ahSource
-  e.ah = ahUnit and ahUnit * yield * (1 - (WC.AH_CUT or 0.05)) or nil
 
   e.de, e.deValue, e.dePartial, e.deSkillOK, e.deStatus, e.deMeasured = nil, nil, nil, nil, nil, nil
-  if ench then
+  if ench and out then
     local v, reason = DEValue(out)
     if v then
       e.deValue = v
@@ -400,7 +411,7 @@ local function FillEntry(e, recipeID, r, ench, isMe)
 
   if cost == nil then
     e.status = "missing"
-  elseif sell == nil then
+  elseif out and sell == nil then
     e.status = "loading"
   else
     e.status = "ok"
@@ -425,7 +436,128 @@ local function CraftOrder(a, b)
   return a.recipeID < b.recipeID
 end
 
-local caches = {}   -- [charKey] = { gen, bagGen, list, byRecipe, counts }
+-- ---------------------------------------------------------------------------
+-- built-in recipe table (WC.RECIPES, DataRecipes.lua; recipeID == spellID). A row is adapted once to the
+-- captured-recipe shape { n, p, o, y1, y2, r = { {itemID, qty} }, ... } so the same code prices both.
+
+local adapters = {}   -- [spellID] = adapted row (only rows actually used)
+
+local function StaticName(spellID, out)
+  if C_Spell and C_Spell.GetSpellName then
+    local ok, name = pcall(C_Spell.GetSpellName, spellID)
+    if ok and type(name) == "string" and name ~= "" then return name, true end
+  end
+  if out then
+    local name = WC.ItemInfo(out)
+    if not name and C_Item and C_Item.GetItemNameByID then
+      local ok, n = pcall(C_Item.GetItemNameByID, out)
+      if ok and type(n) == "string" and n ~= "" then name = n end
+    end
+    if name then return name, true end
+    Request(out)
+  end
+  return L.PROFIT_RECIPE_FMT:format(spellID), false
+end
+
+-- WC.RECIPES row of a spell and its skill line (looks in every skill line if not under skillLine)
+local function StaticRow(spellID, skillLine)
+  local all = WC.RECIPES
+  if type(all) ~= "table" or spellID == nil then return nil end
+  local line = skillLine and all[skillLine]
+  local row = (type(line) == "table") and line[spellID] or nil
+  if type(row) == "table" then return row, skillLine end
+  -- lines are decoded lazily: find the spell's line first (WC.RecipeLine decodes nothing), then read only that line
+  local sl = WC.RecipeLine and WC.RecipeLine(spellID)
+  local t = sl and all[sl]
+  if type(t) == "table" and type(t[spellID]) == "table" then return t[spellID], sl end
+  return nil
+end
+
+-- adapted WC.RECIPES row: { n, p, o, y1, y2, r, su, s, y, g, src = "t"|"i"|"?", ri, ab, static = row } or nil
+function Profit:StaticRecipe(spellID, skillLine)
+  local a = adapters[spellID]
+  if a then
+    if not a.named then a.n, a.named = StaticName(spellID, a.o) end
+    return a
+  end
+  local row, sl = StaticRow(spellID, skillLine)
+  if not row then return nil end
+  local r, flat = {}, (type(row.r) == "table") and row.r or EMPTY
+  for i = 1, #flat - 1, 2 do r[#r + 1] = { flat[i], flat[i + 1] } end
+  a = { p = sl, o = row.o, y1 = row.n1, y2 = row.n2, r = r, su = row.su, s = row.s, y = row.y, g = row.g,
+        src = row.t, ri = row.ri, ab = row.ab, static = row }
+  a.n, a.named = StaticName(spellID, row.o)
+  adapters[spellID] = a
+  return a
+end
+
+-- { [skillLine] = { name, rank, max } } of a character
+local function ProfsOf(charKey)
+  local R = WC.Recipes
+  if not (R and R.Professions) then return EMPTY end
+  local ok, t = pcall(R.Professions, R, charKey)
+  if ok and type(t) == "table" then return t end
+  return EMPTY
+end
+
+-- learn skill, training cost (copper|nil), guess of a trainer recipe. What the player saw at a trainer
+-- (Recipes:TrainerInfo) wins; the built-in row's learn skill is only a guess when se == 1.
+function Profit:LearnInfo(skillLine, spellID, row)
+  local ts, cost
+  local R = WC.Recipes
+  if R and R.TrainerInfo then
+    local ok, a, b = pcall(R.TrainerInfo, R, skillLine, spellID)
+    if ok then ts, cost = tonumber(a), tonumber(b) end
+  end
+  if row == nil and type(WC.RECIPES) == "table" then
+    local line = WC.RECIPES[skillLine]
+    row = type(line) == "table" and line[spellID] or nil
+  end
+  local s = ts or (type(row) == "table" and tonumber(row.s)) or nil
+  return s, cost, (ts == nil and type(row) == "table" and row.se == 1) or false
+end
+
+local caches = {}   -- [charKey] = { gen, bagGen, list, byRecipe, counts, extra, extraBy, extraGen }
+
+-- Each built-in recipe (WC.RECIPES) the character hasn't captured, up to the skill cap of its current rank:
+-- trainer recipes (exact learn skill / cost from Profit:LearnInfo) and recipes learned automatically with the
+-- profession (a = 1, known once the skill reaches s). fn(spellID, adaptedRow, s, learnCost, guess, auto, rank)
+-- only = optional set of skill lines to look at (the others are not decoded).
+local function ForStaticRows(charKey, recipes, fn, only)
+  if type(WC.RECIPES) ~= "table" then return end
+  for skillLine, prof in pairs(ProfsOf(charKey)) do
+    local rows = (not only or only[skillLine]) and WC.RECIPES[skillLine] or nil
+    if type(rows) == "table" and type(prof) == "table" then
+      local rank = tonumber(prof.rank) or 0
+      local cap = tonumber(prof.max) or rank
+      for spellID, row in pairs(rows) do
+        if type(row) == "table" and row.o and not (recipes and recipes[spellID]) then
+          local s, learnCost, guess, auto
+          if row.a == 1 then
+            s, auto, guess = tonumber(row.s) or 0, true, false
+          elseif row.t == "t" then
+            s, learnCost, guess = Profit:LearnInfo(skillLine, spellID, row)
+          end
+          local a = s and s <= cap and Profit:StaticRecipe(spellID, skillLine)
+          if a then fn(spellID, a, s, learnCost, guess, auto, rank) end
+        end
+      end
+    end
+  end
+end
+
+-- learned / learn fields of a built-in recipe entry; returns true when the character already knows it
+local function MarkStatic(e, s, learnCost, guess, auto, rank)
+  if auto and s <= rank then
+    e.learned, e.learnSkill, e.learnable, e.source = true, nil, nil, "auto"
+    e.learnCost, e.learnGuess, e.auto = nil, false, true
+    return true
+  end
+  e.learned, e.learnSkill, e.learnable, e.source = false, s, (not auto) and s <= rank, auto and "auto" or "t"
+  e.learnCost, e.auto = learnCost, auto or nil
+  if auto then e.learnGuess = false else e.learnGuess = guess or nil end
+  return false
+end
 
 local function BuildCraft(c, charKey)
   local recipes = RecipesFor(charKey)
@@ -433,7 +565,18 @@ local function BuildCraft(c, charKey)
   local ench = EnchSkill(charKey)
   local list, byRecipe, counts = c.list, c.byRecipe, c.counts
   ClearArray(list)
-  local total, noOutput, missing, loading, profitable = 0, 0, 0, 0, 0
+  local total, noOutput, missing, loading, profitable, unlearned = 0, 0, 0, 0, 0, 0
+  local function Add(e, recipeID, r)
+    FillEntry(e, recipeID, r, ench, isMe)
+    e.gen = gen
+    list[#list + 1] = e
+    if e.status == "missing" then
+      missing = missing + 1
+    elseif e.status == "loading" then
+      loading = loading + 1
+    end
+    if e.best and e.best > 0 then profitable = profitable + 1 end
+  end
   if recipes then
     for recipeID, r in pairs(recipes) do
       if type(r) == "table" then
@@ -441,20 +584,24 @@ local function BuildCraft(c, charKey)
         if r.o then
           local e = byRecipe[recipeID]
           if not e then e = {}; byRecipe[recipeID] = e end
-          FillEntry(e, recipeID, r, ench, isMe)
-          e.gen = gen
-          list[#list + 1] = e
-          if e.status == "missing" then
-            missing = missing + 1
-          elseif e.status == "loading" then
-            loading = loading + 1
-          end
-          if e.best and e.best > 0 then profitable = profitable + 1 end
+          Add(e, recipeID, r)
+          e.learned, e.learnSkill, e.learnable, e.source = true, nil, nil, nil
+          e.learnCost, e.learnGuess, e.auto = nil, nil, nil
         else
           noOutput = noOutput + 1     -- enchants etc.: nothing to sell
         end
       end
     end
+  end
+  -- built-in recipes not captured (setting "show recipes I haven't learned"; the recipe data is decoded only then)
+  local db = DB()
+  if db and db.craftShowUnlearned then
+    ForStaticRows(charKey, recipes, function(spellID, a, s, learnCost, guess, auto, rank)
+      local e = byRecipe[spellID]
+      if not e then e = {}; byRecipe[spellID] = e end
+      Add(e, spellID, a)
+      if not MarkStatic(e, s, learnCost, guess, auto, rank) then unlearned = unlearned + 1 end
+    end)
   end
   for k, e in pairs(byRecipe) do
     if e.gen ~= gen then byRecipe[k] = nil end
@@ -462,6 +609,7 @@ local function BuildCraft(c, charKey)
   tsort(list, CraftOrder)
   counts.total, counts.noOutput, counts.missing = total, noOutput, missing
   counts.loading, counts.profitable, counts.listed = loading, profitable, #list
+  counts.unlearned = unlearned
 end
 
 -- Array of entries (recipes that make an item), sorted best profit first, plus counts.
@@ -471,7 +619,9 @@ end
 --   cost, missing = { itemID, ... } (empty when none), est, cash,
 --   sell, npc, npcNoBuy, npcProfit, ahUnit, ahTime, ahSource, ah, ahProfit,
 --   de, deProfit, dePartial, deSkillOK, deMeasured, deStatus, deValue,
---   best, bestKind = "npc"|"ah"|"de", status = "ok"|"missing"|"loading" }
+--   best, bestKind = "npc"|"ah"|"de", status = "ok"|"missing"|"loading",
+--   learned (false = trainer recipe not learned yet, listed when db.craftShowUnlearned), learnSkill, learnable,
+--   learnCost (training cost, nil if unknown), learnGuess (learn skill not confirmed at a trainer yet) }
 function Profit:Craft(charKey)
   charKey = charKey or CurrentChar()
   local c = caches[charKey]
@@ -491,6 +641,35 @@ function Profit:Craft(charKey)
   return c.list, c.counts
 end
 
+-- Built-in recipes the character hasn't captured, priced like Craft() entries but kept out of its list (switch
+-- off). Only Disenchant() asks for them ("craft then disenchant" must consider trainer recipes); built on demand
+-- so the Crafting tab never decodes recipe data. Empty when the switch is on (they are in Craft() then).
+-- Only professions whose products can be disenchanted (weapons / armor) are read.
+local GEAR_LINES = { [164] = true, [165] = true, [197] = true, [202] = true }   -- BS, LW, Tailoring, Engineering
+local function CraftExtra(charKey)
+  local c = caches[charKey]
+  local db = DB()
+  if not c or (db and db.craftShowUnlearned) then return EMPTY end
+  if c.extraGen == gen and c.extra then return c.extra end
+  local extra, by = c.extra or {}, c.extraBy or {}
+  c.extra, c.extraBy = extra, by
+  ClearArray(extra)
+  local ench, isMe = EnchSkill(charKey), (charKey == CurrentChar())
+  ForStaticRows(charKey, RecipesFor(charKey), function(spellID, a, s, learnCost, guess, auto, rank)
+    local e = by[spellID]
+    if not e then e = {}; by[spellID] = e end
+    FillEntry(e, spellID, a, ench, isMe)
+    e.gen = gen
+    MarkStatic(e, s, learnCost, guess, auto, rank)
+    extra[#extra + 1] = e
+  end, GEAR_LINES)
+  for k, e in pairs(by) do
+    if e.gen ~= gen then by[k] = nil end
+  end
+  c.extraGen = gen
+  return extra
+end
+
 function Profit:CraftEntry(recipeID)
   local charKey = CurrentChar()
   self:Craft(charKey)
@@ -498,7 +677,7 @@ function Profit:CraftEntry(recipeID)
 end
 
 -- { total = recipes captured, noOutput = recipes without a product (not in Craft()),
---   missing, loading, profitable (best > 0), listed = #Craft() }
+--   missing, loading, profitable (best > 0), listed = #Craft(), unlearned (trainer recipes listed) }
 function Profit:CraftCounts(charKey)
   local _, counts = self:Craft(charKey)
   return counts
@@ -515,24 +694,37 @@ local function SortedKeys(set)
 end
 
 local function CraftScanItems()
-  local recipes = RecipesFor(CurrentChar())
+  local charKey = CurrentChar()
+  local recipes = RecipesFor(charKey)
   local items = {}
-  if not recipes then return items end
   local reag, outs, anyGear = {}, {}, false
-  for _, r in pairs(recipes) do
+  local function Reagent(id)
+    if id and reag[id] == nil then
+      -- skip the AH search only for a confirmed unlimited vendor; limited stock or a Classic-only
+      -- location still gets searched so the AH price is known as a fallback
+      local unit, info = VendorPrice(id)
+      local confirmed = unit and type(info) == "table" and not info.limited and not info.classic
+      reag[id] = not confirmed
+    end
+  end
+  for _, r in pairs(recipes or EMPTY) do
     if type(r) == "table" and r.o then
       outs[r.o] = true
       local list = (type(r.r) == "table") and r.r or EMPTY
       for i = 1, #list do
         local rg = list[i]
-        local id = (type(rg) == "table") and tonumber(rg[1] or rg.itemID) or nil
-        if id and reag[id] == nil then
-          -- skip the AH search only for a confirmed unlimited vendor; limited stock or a Classic-only
-          -- location still gets searched so the AH price is known as a fallback
-          local unit, info = VendorPrice(id)
-          local confirmed = unit and type(info) == "table" and not info.limited and not info.classic
-          reag[id] = not confirmed
-        end
+        Reagent((type(rg) == "table") and tonumber(rg[1] or rg.itemID) or nil)
+      end
+    end
+  end
+  -- skill-up candidates (learned + trainer) of each profession in [skill, min(target, skill + 50)]
+  local Lv = WC.Leveling
+  if Lv and Lv.ScanItems then
+    local ok, lr, lo = pcall(Lv.ScanItems, Lv, charKey)
+    if ok and type(lr) == "table" then
+      for id in pairs(lr) do Reagent(id) end
+      if type(lo) == "table" then
+        for id in pairs(lo) do outs[id] = true end
       end
     end
   end
@@ -567,8 +759,7 @@ local function RegisterScanKind()
   local ok = pcall(S.RegisterKind, S, "craft", {
     label = function() return L.PROFIT_SCAN_LABEL end,
     canStart = function()
-      local recipes = RecipesFor(CurrentChar())
-      if recipes and next(recipes) ~= nil then return true end
+      if #CraftScanItems() > 0 then return true end
       return false, L.PROFIT_NO_RECIPES
     end,
     phases = {
@@ -914,9 +1105,13 @@ local function ScanCraft(ench)
   ClearArray(list)
   local stamp = gen
   if ench then
-    local craft = Profit:Craft()
-    for i = 1, #craft do
-      local ce = craft[i]
+    -- learned recipes + trainer recipes not learned yet (always considered here, whatever the Crafting switch)
+    local charKey = CurrentChar()
+    local craft = Profit:Craft(charKey)
+    local hidden = CraftExtra(charKey)
+    local nCraft = #craft
+    for i = 1, nCraft + #hidden do
+      local ce = (i <= nCraft) and craft[i] or hidden[i - nCraft]
       local v = ce.deValue
       if v then
         local e = map[ce.recipeID]
@@ -933,6 +1128,8 @@ local function ScanCraft(ench)
         e.buy = ce.cost                      -- material cost per craft
         e.costMissing = ce.missing           -- materials without a price
         e.gain = ce.deProfit
+        e.learned, e.learnSkill, e.learnable = ce.learned, ce.learnSkill, ce.learnable
+        e.learnCost, e.learnGuess, e.auto = ce.learnCost, ce.learnGuess, ce.auto
         if ce.cost == nil or e.value == nil then
           e.status = "missing"
         elseif e.partial then
@@ -968,6 +1165,7 @@ end
 --   "craft"), sell (NPC price), buy (AH min / material cost per craft), gain (bag: value - sell;
 --   ah/craft: value - buy), totalGain (bag: gain x count), skillOK, skill, partial, missing (DE mats
 --   without a price), costMissing (craft), measured, casts, band, time, listed,
+--   craft only: learned (false = trainer recipe to learn first), learnSkill, learnable, learnCost, learnGuess, auto,
 --   status = "ok"|"partial"|"missing"|"loading"|"nodisenchant"|"noband" },
 -- sorted by gain (unknown last), plus stats { bag, ah, craft, lowSkill, loading, enchanting }.
 function Profit:Disenchant()
@@ -1014,6 +1212,11 @@ local function Invalidate()
   gen = gen + 1
 end
 Profit.Invalidate = Invalidate
+
+-- for Leveling.lua (same caches, same rules): cache generation + the shared pricing code
+function Profit:Generation() return gen end
+Profit.internal = { FillEntry = FillEntry, EnchSkill = EnchSkill, CurrentChar = CurrentChar, DB = DB,
+                    StaticRow = StaticRow, ProfsOf = ProfsOf, ClearArray = ClearArray }
 
 -- While a browse runs (flips / de scans), ask the client for the items it just listed, so their vendor
 -- price and item level are known by the time FlipCandidates / Disenchant need them (right after the browse).

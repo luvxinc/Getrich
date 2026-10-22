@@ -9,10 +9,19 @@ local addonName, WC = ...
 --
 -- SavedVariables (owned by this file):
 --   db.recipes[charKey][recipeID] = { n = name, p = skillLineID, o = outputItemID|nil, y1 = min yield, y2 = max yield,
---                                     r = { { itemID, qty }, ... }, tool = "Anvil, Blacksmith Hammer"|nil, t = time }
+--                                     r = { { itemID, qty }, ... }, tool = "Anvil, Blacksmith Hammer"|nil, t = time,
+--                                     su = numSkillUps, d = relativeDifficulty (0 orange, 1 yellow, 2 green, 3 grey),
+--                                     mt = maxTrivialLevel, ab = skillLineAbilityID }
 --   db.chars[charKey] = { name, realm, class, profs = { [skillLine] = { name, rank, max } },
 --                         captured = { [skillLine] = time of the last complete capture }, t }
+--   db.trainer[skillLine][spellID] = { s = skill the trainer asks, cost = copper, f = faction that saw it, t = time }
+--     (account-wide; read from profession trainer windows, see "trainer" below)
 -- `tool` is information only (station / tool the recipe needs). It never hides a recipe or blocks profit.
+-- Skill rank/max are re-read (debounced 1 s) on SKILL_LINES_CHANGED, CHAT_MSG_SKILL and TRADE_SKILL_LIST_UPDATE; when
+-- the open profession's rank changes, `d`/`su` of its recipes are refreshed from GetRecipeInfo (no schematic calls).
+-- TradeSkillRecipeInfo fields numSkillUps, relativeDifficulty (Enum.TradeskillRelativeDifficulty Optimal=0, Medium=1,
+-- Easy=2, Trivial=3), maxTrivialLevel, skillLineAbilityID: APIDoc/TradeSkillUITypesDocumentation.lua:388;
+-- CHAT_MSG_SKILL: APIDoc/ChatInfoDocumentation.lua:2426.
 --
 -- API checked against the Forever UI source (wow-ui-source, branch forever, 1.60.1.70450):
 --   GetRecipeInfo / GetRecipeSchematic(id, isRecraft) / GetRecipeOutputItemData / GetRecipeRequirements /
@@ -41,13 +50,14 @@ local function pack(...) return { n = select("#", ...), ... } end
 
 local function DB()
   if not ready then
-    if type(WaylaidCrateDB) ~= "table" then return nil end
+    if type(GetrichDB) ~= "table" then return nil end
     ready = true
   end
   local db = WC:DB()
   if type(db) ~= "table" then return nil end
   if type(db.recipes) ~= "table" then db.recipes = {} end
   if type(db.chars) ~= "table" then db.chars = {} end
+  if type(db.trainer) ~= "table" then db.trainer = {} end
   return db
 end
 
@@ -109,6 +119,10 @@ function Recipes:UpdateChar(prune)
       end
     end
   end
+  local open = Recipes.OpenSkillLine and Recipes:OpenSkillLine()
+  if open and profs[open] and type(c.profs) == "table" and c.profs[open] and c.profs[open].rank ~= profs[open].rank then
+    if Recipes:RefreshDifficulty(open) then changed = true end   -- colours move with the skill
+  end
   c.profs = profs
   if changed then
     allItems = nil
@@ -148,6 +162,31 @@ local function OpenProfession()
   local id = info.parentProfessionID or info.professionID
   if type(id) ~= "number" or id <= 0 then return nil end
   return id, info.parentProfessionName or info.professionName
+end
+
+-- skillLine of the player's own open, ready trade skill (nil when closed, loading, linked, guild or NPC crafting)
+function Recipes:OpenSkillLine()
+  return (OpenProfession())
+end
+
+-- re-read relativeDifficulty / numSkillUps of the stored recipes of the open profession (after a skill-up).
+-- Returns true if anything changed. Only GetRecipeInfo calls (cheap), only while that profession is open.
+function Recipes:RefreshDifficulty(skillLine)
+  local db = DB()
+  if not db or OpenProfession() ~= skillLine then return false end
+  local list = db.recipes[WC:CharKey()]
+  if type(list) ~= "table" then return false end
+  local T, changed = C_TradeSkillUI, false
+  for id, r in pairs(list) do
+    if r.p == skillLine then
+      local ok, info = pcall(T.GetRecipeInfo, id)
+      if ok and type(info) == "table" then
+        local d, su = tonumber(info.relativeDifficulty), tonumber(info.numSkillUps)
+        if d ~= r.d or su ~= r.su then r.d, r.su = d, su; changed = true end
+      end
+    end
+  end
+  return changed
 end
 
 -- one recipe -> stored record, or nil (+ "loading" when the client had no data for it yet)
@@ -205,12 +244,15 @@ local function ReadRecipe(T, id, prof, now)
   if y1 < 1 then y1 = 1 end
   local y2 = tonumber(s.quantityMax) or y1
   if y2 < y1 then y2 = y1 end
-  return { n = info.name or s.name, p = prof, o = out, y1 = y1, y2 = y2, r = reagents, tool = tool, t = now }
+  return { n = info.name or s.name, p = prof, o = out, y1 = y1, y2 = y2, r = reagents, tool = tool, t = now,
+           su = tonumber(info.numSkillUps), d = tonumber(info.relativeDifficulty), mt = tonumber(info.maxTrivialLevel),
+           ab = tonumber(info.skillLineAbilityID) }
 end
 
 local function SameRecipe(a, b)
   if type(a) ~= "table" then return false end
   if a.n ~= b.n or a.p ~= b.p or a.o ~= b.o or a.y1 ~= b.y1 or a.y2 ~= b.y2 or a.tool ~= b.tool then return false end
+  if a.su ~= b.su or a.d ~= b.d or a.mt ~= b.mt or a.ab ~= b.ab then return false end
   local ra, rb = a.r or {}, b.r
   if #ra ~= #rb then return false end
   for i = 1, #rb do
@@ -349,6 +391,13 @@ function Recipes:Professions(charKey)
   return EMPTY
 end
 
+-- current skill rank, max of a profession (current character by default); nil if the character doesn't have it
+function Recipes:Skill(charKey, skillLine)
+  local p = self:Professions(charKey)[skillLine]
+  if type(p) ~= "table" then return nil end
+  return p.rank, p.max
+end
+
 -- time of the last complete capture of a profession, or nil if it was never read
 function Recipes:CapturedAt(skillLine, charKey)
   local db = DB()
@@ -383,10 +432,256 @@ function WC:EnchantingSkill(charKey)
 end
 
 -- ---------------------------------------------------------------------------
+-- trainer: the client data has no trainer skill requirement (DataRecipes guesses s = yellow, se = 1), so the
+-- profession trainer's window is read on TRAINER_SHOW / TRAINER_UPDATE: required skill + training cost per recipe.
+--
+-- Verified in the Forever UI source (Blizzard_TrainerUI/Mainline/Blizzard_TrainerUI.lua, loaded for camelot):
+--   GetNumTrainerServices(), GetTrainerServiceInfo(i) -> name, serviceType ("available"|"unavailable"|"used"),
+--   texture, reqLevel, subText, category (:484, :634); GetTrainerServiceSkillReq(i) -> skillName, rank, hasReq (:653);
+--   GetTrainerServiceCost(i) -> copper, isProfession (:708); GetTrainerServiceStepIndex() (the profession-rank step,
+--   :475); IsTradeskillTrainer() (:887); Get/SetTrainerServiceTypeFilter(filter[, on]) with filters "available",
+--   "unavailable", "used" (:243-248). APIDoc/TrainerDocumentation.lua: C_Trainer.GetTrainerType() (Enum.TrainerType
+--   Tradeskills = 2), events TRAINER_SHOW, TRAINER_UPDATE, TRAINER_CLOSED, TRAINER_SERVICE_INFO_NAME_UPDATE.
+--   APIDoc/TooltipInfoDocumentation.lua:1148 C_TooltipInfo.GetTrainerService(i) -> TooltipData { type, id }
+--   (Enum.TooltipDataType Item = 0, Spell = 1; TooltipUtil.lua reads .id the same way).
+-- Service -> recipe spellID: the tooltip's spell id; else its item id (or GetTrainerServiceItemLink, if the client
+-- has it) -> the recipe of that skill line that makes the item; else the spell name (C_Spell.GetSpellName).
+-- Filters: if the user hides some service types, they are switched on for the read and put back right after
+-- (pcall-protected), so the window always ends with the user's own filter state. That happens on the first read of
+-- a visit and again (at most MAX_WIDE_READS times) while some service could not be identified because the client
+-- doesn't know its name yet (GetTrainerServiceInfo name nil until TRAINER_SERVICE_INFO_NAME_UPDATE). TRAINER_UPDATE /
+-- name events caused by our own filter changes are ignored.
+
+local TRAINER_FILTERS = { "available", "unavailable", "used" }
+local KNOWN_LINES = { 171, 164, 333, 202, 165, 197, 185, 129, 186, 356, 182, 393, 40 }
+local trainerSession = { expanded = false }
+local MAX_WIDE_READS = 6
+local trainerToken = 0
+
+local function RecipeLines()
+  if type(WC.RECIPE_LINES) == "table" then return WC.RECIPE_LINES end
+  return KNOWN_LINES
+end
+
+-- localized profession name -> skillLine
+local function SkillNameMap(db)
+  local map = {}
+  local function add(name, line)
+    if type(name) == "string" and name ~= "" and not map[name] then map[name] = line end
+  end
+  for _, c in pairs(db.chars) do
+    if type(c) == "table" and type(c.profs) == "table" then
+      for line, p in pairs(c.profs) do if type(p) == "table" then add(p.name, line) end end
+    end
+  end
+  local T = C_TradeSkillUI
+  for _, line in ipairs(RecipeLines()) do
+    if T and T.GetProfessionInfoBySkillLineID then
+      local ok, info = pcall(T.GetProfessionInfoBySkillLineID, line)
+      if ok and type(info) == "table" then add(info.professionName, line) end
+    end
+    if C_SkillInfo and C_SkillInfo.GetSkillLineInfoByID then
+      local ok, info = pcall(C_SkillInfo.GetSkillLineInfoByID, line)
+      if ok and type(info) == "table" then add(info.name, line) end
+    end
+  end
+  return map
+end
+
+-- per skill line: product itemID -> spellID (false when two recipes make it) and spell name -> spellID
+local function LineIndex(cache, line, db)
+  local idx = cache[line]
+  if idx then return idx end
+  idx = { byItem = {}, byName = {} }
+  cache[line] = idx
+  local data = WC.RECIPES and WC.RECIPES[line]
+  if type(data) == "table" then
+    for spellID, r in pairs(data) do
+      if type(r) == "table" and r.o then
+        local had = idx.byItem[r.o]
+        idx.byItem[r.o] = (had == nil) and spellID or false
+      end
+      if C_Spell and C_Spell.GetSpellName then
+        local ok, name = pcall(C_Spell.GetSpellName, spellID)
+        if ok and type(name) == "string" and name ~= "" then idx.byName[name] = spellID end
+      end
+    end
+  end
+  for _, list in pairs(db.recipes) do       -- names of captured recipes (any character)
+    if type(list) == "table" then
+      for id, r in pairs(list) do
+        if r.p == line and type(r.n) == "string" and not idx.byName[r.n] then idx.byName[r.n] = id end
+      end
+    end
+  end
+  return idx
+end
+
+local function ItemFromLink(link)
+  return type(link) == "string" and tonumber(link:match("item:(%d+)")) or nil
+end
+
+-- is spellID a recipe of this skill line? (static data of that line only, or any character's captured recipe)
+local function IsLineRecipe(line, spellID, db)
+  local data = WC.RECIPES and WC.RECIPES[line]
+  if type(data) == "table" and data[spellID] then return true end
+  for _, list in pairs(db.recipes) do
+    local r = type(list) == "table" and list[spellID]
+    if type(r) == "table" and r.p == line then return true end
+  end
+  return false
+end
+
+local function ServiceSpell(i, name, line, cache, db)
+  local spellID, itemID
+  if C_TooltipInfo and C_TooltipInfo.GetTrainerService then
+    local ok, data = pcall(C_TooltipInfo.GetTrainerService, i)
+    if ok and type(data) == "table" and type(data.id) == "number" then
+      if data.type == 1 then spellID = data.id elseif data.type == 0 then itemID = data.id end
+    end
+  end
+  if not line then return nil end
+  -- the tooltip may carry the spell that *teaches* the recipe: only a known recipe ID of this line is taken as is
+  if spellID and IsLineRecipe(line, spellID, db) then return spellID end
+  if not itemID and type(GetTrainerServiceItemLink) == "function" then
+    local ok, link = pcall(GetTrainerServiceItemLink, i)
+    if ok then itemID = ItemFromLink(link) end
+  end
+  local idx = LineIndex(cache, line, db)
+  if itemID and idx.byItem[itemID] then return idx.byItem[itemID] end
+  if type(name) == "string" then return idx.byName[name] end
+  return nil
+end
+
+local function ReadServices(db)
+  local okN, n = pcall(GetNumTrainerServices)
+  if not okN or type(n) ~= "number" or n <= 0 then return 0, false, 0 end
+  local okStep, step = pcall(GetTrainerServiceStepIndex)
+  step = okStep and step or nil
+  local names = SkillNameMap(db)
+  local services, votes = {}, {}
+  for i = 1, n do
+    if i ~= step then
+      local okI, name, serviceType = pcall(GetTrainerServiceInfo, i)
+      if okI and serviceType ~= "header" then      -- name may still be nil (not loaded yet): the tooltip id may do
+        local okC, cost, isProfession = pcall(GetTrainerServiceCost, i)
+        if not (okC and isProfession) then
+          local okS, skill, rank = pcall(GetTrainerServiceSkillReq, i)
+          local line = okS and skill and names[skill] or nil
+          if line then votes[line] = (votes[line] or 0) + 1 end
+          services[#services + 1] = { i = i, name = name, line = line, s = okS and tonumber(rank) or nil,
+                                      cost = okC and tonumber(cost) or nil }
+        end
+      end
+    end
+  end
+  local main, best = nil, 0
+  for line, v in pairs(votes) do if v > best then main, best = line, v end end
+  local faction
+  if UnitFactionGroup then
+    local okF, f = pcall(UnitFactionGroup, "player")
+    if okF and (f == "Alliance" or f == "Horde") then faction = f end
+  end
+  local now, cache, count, changed, pending = Now(), {}, 0, false, 0
+  for _, sv in ipairs(services) do
+    local line = sv.line or main
+    local spellID = line and ServiceSpell(sv.i, sv.name, line, cache, db)
+    if not spellID and sv.name == nil then pending = pending + 1 end   -- try again once the name is known
+    if spellID then
+      local byLine = db.trainer[line]
+      if type(byLine) ~= "table" then byLine = {}; db.trainer[line] = byLine end
+      local s = sv.s or 1
+      local old = byLine[spellID]
+      if type(old) ~= "table" or old.s ~= s or old.cost ~= sv.cost then changed = true end
+      byLine[spellID] = { s = s, cost = sv.cost, f = faction, t = now }
+      count = count + 1
+    end
+  end
+  return count, changed, pending
+end
+
+local function IsProfessionTrainer()
+  if type(IsTradeskillTrainer) == "function" then
+    local ok, v = pcall(IsTradeskillTrainer)
+    if ok then return v and true or false end
+  end
+  if C_Trainer and C_Trainer.GetTrainerType then
+    local ok, v = pcall(C_Trainer.GetTrainerType)
+    if ok then return v == 2 end      -- Enum.TrainerType.Tradeskills
+  end
+  return false
+end
+
+-- read the open trainer window (all service types; the user's filters are restored before returning)
+function Recipes:ReadTrainer()
+  local db = DB()
+  if not db or type(GetNumTrainerServices) ~= "function" or type(GetTrainerServiceInfo) ~= "function"
+     or not IsProfessionTrainer() then return 0 end
+  local saved
+  local wide = not trainerSession.expanded
+               or (trainerSession.pending and (trainerSession.wide or 0) < MAX_WIDE_READS)
+  if wide and type(GetTrainerServiceTypeFilter) == "function" and type(SetTrainerServiceTypeFilter) == "function" then
+    trainerSession.expanded = true
+    trainerSession.wide = (trainerSession.wide or 0) + 1
+    for _, f in ipairs(TRAINER_FILTERS) do
+      local ok, on = pcall(GetTrainerServiceTypeFilter, f)
+      if ok and not on then saved = saved or {}; saved[#saved + 1] = f end
+    end
+    if saved then
+      trainerSession.toggling = true
+      for _, f in ipairs(saved) do pcall(SetTrainerServiceTypeFilter, f, true) end
+    end
+  end
+  local ok, count, changed, pending = pcall(ReadServices, db)
+  if saved then
+    for _, f in ipairs(saved) do pcall(SetTrainerServiceTypeFilter, f, false) end
+    trainerSession.toggling = false
+  end
+  if not ok then
+    if WC.Debug then WC.Debug("Recipes trainer", count) end
+    return 0
+  end
+  trainerSession.pending = (pending or 0) > 0
+  if changed then WC:Fire("RECIPES_UPDATED", WC:CharKey()) end
+  return count
+end
+
+-- skill a trainer asks for a recipe and its training cost (copper); nil when never seen at a trainer
+function Recipes:TrainerInfo(skillLine, spellID)
+  local db = DB()
+  local byLine = db and db.trainer[skillLine]
+  local e = type(byLine) == "table" and byLine[spellID]
+  if type(e) ~= "table" then return nil end
+  return e.s, e.cost
+end
+
+local function QueueTrainer(delay)
+  trainerToken = trainerToken + 1
+  local token = trainerToken
+  C_Timer.After(delay, function()
+    if token == trainerToken then Recipes:ReadTrainer() end
+  end)
+end
+
+-- ---------------------------------------------------------------------------
 -- events
 
 local frame = CreateFrame("Frame")
-local skillToken = 0
+local skillToken, skillPrune = 0, false
+-- re-read the professions 1 s after the last skill event (SKILL_LINES_CHANGED also fires for weapon skill-ups);
+-- RECIPES_UPDATED only fires when something really changed
+local function QueueSkills(prune)
+  skillToken = skillToken + 1
+  if prune then skillPrune = true end
+  local token = skillToken
+  C_Timer.After(1, function()
+    if token ~= skillToken then return end
+    local p = skillPrune
+    skillPrune = false
+    Recipes:UpdateChar(p)
+  end)
+end
+
 local function OnEvent(_, event, ...)
   if event == "TRADE_SKILL_SHOW" then
     session = { done = {}, tries = {} }
@@ -394,6 +689,7 @@ local function OnEvent(_, event, ...)
     Schedule(true)
   elseif event == "TRADE_SKILL_LIST_UPDATE" then
     Schedule(false)
+    QueueSkills(false)
   elseif event == "TRADE_SKILL_DATA_SOURCE_CHANGED" then
     Schedule(true)
   elseif event == "TRADE_SKILL_DATA_SOURCE_CHANGING" then
@@ -406,10 +702,17 @@ local function OnEvent(_, event, ...)
     session.done, session.tries = {}, {}
     Schedule(false)
   elseif event == "SKILL_LINES_CHANGED" then
-    -- fires for every weapon skill-up too: debounce and only fire RECIPES_UPDATED on real changes
-    skillToken = skillToken + 1
-    local token = skillToken
-    C_Timer.After(1, function() if token == skillToken then Recipes:UpdateChar(true) end end)
+    QueueSkills(true)
+  elseif event == "CHAT_MSG_SKILL" then
+    QueueSkills(false)
+  elseif event == "TRAINER_SHOW" then
+    trainerSession = { expanded = false }
+    QueueTrainer(0.2)
+  elseif event == "TRAINER_UPDATE" or event == "TRAINER_SERVICE_INFO_NAME_UPDATE" then
+    if not trainerSession.toggling then QueueTrainer(0.5) end
+  elseif event == "TRAINER_CLOSED" then
+    trainerToken = trainerToken + 1
+    trainerSession = { expanded = false }
   elseif event == "PLAYER_LOGIN" then
     Recipes:UpdateChar(false)
   end
@@ -420,7 +723,8 @@ frame:SetScript("OnEvent", function(...)
 end)
 for _, e in ipairs({ "TRADE_SKILL_SHOW", "TRADE_SKILL_LIST_UPDATE", "TRADE_SKILL_DATA_SOURCE_CHANGED",
                      "TRADE_SKILL_DATA_SOURCE_CHANGING", "TRADE_SKILL_CLOSE", "NEW_RECIPE_LEARNED",
-                     "SKILL_LINES_CHANGED", "PLAYER_LOGIN" }) do
+                     "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL", "PLAYER_LOGIN",
+                     "TRAINER_SHOW", "TRAINER_UPDATE", "TRAINER_CLOSED", "TRAINER_SERVICE_INFO_NAME_UPDATE" }) do
   pcall(frame.RegisterEvent, frame, e)
 end
 

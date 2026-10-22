@@ -1,0 +1,40 @@
+## Interface: 16001
+## Title: Getrich
+## Title-zhCN: Getrich 挣钱助手
+## Title-zhTW: Getrich 賺錢助手
+## Notes: Money-making helper for WoW Forever: AH-to-vendor flips, crafting profit and skill-up planning, disenchanting, price history, Waylaid Crates and Craftsman's Writs.
+## Notes-zhCN: 魔兽世界 Forever 挣钱助手：拍卖行低于卖店价的倒卖、制造利润和冲技能规划、附魔分解、价格走势、Waylaid Crate 和 Craftsman's Writ。
+## Notes-zhTW: 魔獸世界 Forever 賺錢助手：拍賣場低於賣店價的倒賣、製造利潤和衝技能規劃、附魔分解、價格走勢、Waylaid Crate 和 Craftsman's Writ。
+## Author: Aaron Tong
+## X-Email: Luvx.inc@gmail.com
+## X-Website: https://github.com/luvxinc/Getrich
+## Version: 2026.10.3
+## X-Released: 2026-10-22
+## IconTexture: Interface\Icons\INV_Misc_Coin_02
+## SavedVariables: GetrichDB
+
+Util.lua
+Locale.lua
+Data.lua
+Writs.lua
+DataVendor.lua
+DataDisenchant.lua
+DataRecipes.lua
+Store.lua
+Scanner.lua
+Recipes.lua
+Merchant.lua
+Disenchant.lua
+Profit.lua
+Leveling.lua
+UI.lua
+UICrates.lua
+UIWrits.lua
+UIFlips.lua
+UICraft.lua
+UIDisenchant.lua
+UIHistory.lua
+UIProfessions.lua
+UIAuction.lua
+Settings.lua
+Core.lua

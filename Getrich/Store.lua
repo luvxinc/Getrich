@@ -2,12 +2,12 @@ local addonName, WC = ...
 
 -- SavedVariables layout, prices and price history.
 --
--- WaylaidCrateDB = {
+-- GetrichDB = {
 --   <settings>          see DEFAULTS below (+ keys other modules add with Store:Default)
 --   resultsFormat = 3,
 --   results   = { [itemID] = { status = "listed"|"none"|"timeout", entries = { {unit, qty}, ... } cheapest first,
 --                              min, avail, time } }            -- latest targeted search (same as 1.3.0)
---   (Init drops results and browse rows older than 14 days)
+--   (Init drops results and browse rows older than pruneDays, default 14)
 --   browse    = { full = <time of last full browse>, gear = <time of last gear browse>,
 --                 items = { [itemID] = { min = cheapest unit, qty = units listed, t = time, ilvl = item level|nil } } }
 --   scannedAt = { [kind] = time },
@@ -17,15 +17,14 @@ local addonName, WC = ...
 --   vendorObs = {}  (Merchant.lua)   recipes = {}, chars = {}  (Recipes.lua)   deSamples = {}  (Disenchant.lua)
 -- }
 -- hourIndex = floor(serverTime / 3600), dayIndex = floor(hourIndex / 24) (UTC days).
--- Hourly records older than 30 days are folded into one daily record { lo, avg, hi, n } when the addon loads
--- (avg = average of that day's hourly cheapest prices, n = number of hourly records folded in).
+-- Hourly records older than historyDays (default 30) are folded into one daily record { lo, avg, hi, n } when the
+-- addon loads or the setting changes (avg = average of that day's hourly cheapest prices, n = hourly records folded in).
+-- An old Codex-built "Getrich" database (schemaVersion + markets/characters, no resultsFormat) is wiped on load.
 
 local Store = {}
 WC.Store = Store
 
 local RESULTS_FORMAT = 3
-local KEEP_HOURS = 30 * 24
-local PRICE_MAX_AGE = 14 * 86400   -- older search results / browse rows are not used for pricing (history keeps the trend)
 
 Store.DEFAULTS = {
   tab = "crates",         -- open tab
@@ -52,7 +51,7 @@ local PRELOAD = setmetatable({ browse = { items = {} } }, { __index = DEFAULTS }
 for _, k in ipairs(TABLES) do PRELOAD[k] = {} end
 
 function WC:DB()
-  return WaylaidCrateDB or PRELOAD
+  return GetrichDB or PRELOAD
 end
 
 local function ServerNow()
@@ -65,15 +64,32 @@ Store.ServerNow = ServerNow
 -- register a default setting (call at file load time, before DB_READY)
 function Store:Default(key, value)
   DEFAULTS[key] = value
-  if WaylaidCrateDB and WaylaidCrateDB[key] == nil then WaylaidCrateDB[key] = value end
+  if GetrichDB and GetrichDB[key] == nil then GetrichDB[key] = value end
+end
+
+Store:Default("historyDays", 30)   -- hourly price history kept this many days, then one record per day
+Store:Default("pruneDays", 14)     -- search results / browse rows older than this are not used for prices
+
+-- a whole number of days from the settings (the default if missing or out of range)
+local function Days(key, lo, hi)
+  local v = tonumber(WC:DB()[key])
+  if not v or v < lo or v > hi then return DEFAULTS[key] end
+  return math.floor(v)
 end
 
 -- ---------------------------------------------------------------------------
 -- load / upgrade
 
 function Store:Init()
-  local db = WaylaidCrateDB
-  if type(db) ~= "table" then db = {}; WaylaidCrateDB = db end
+  local db = GetrichDB
+  if type(db) ~= "table" then db = {}; GetrichDB = db end
+  -- The old Codex-built "Getrich" used the same SavedVariables name with a different layout. The user wants it gone
+  -- completely (SPEC2 0.1): nothing is migrated.
+  if db.resultsFormat == nil and db.schemaVersion ~= nil and (db.markets ~= nil or db.characters ~= nil) then
+    db = {}
+    GetrichDB = db
+    self.wipedOld = true
+  end
   for k, v in pairs(DEFAULTS) do
     if db[k] == nil then db[k] = v end
   end
@@ -105,11 +121,11 @@ function Store:Init()
   WC:Fire("DB_READY")
 end
 
--- Drop search results and browse rows older than 14 days. Returns results dropped, browse rows dropped.
+-- Drop search results and browse rows older than pruneDays. Returns results dropped, browse rows dropped.
 function Store:PruneOld(now)
-  local db = WaylaidCrateDB
-  if not db then return 0, 0 end
-  local cutoff = (now or time()) - PRICE_MAX_AGE
+  local db = GetrichDB
+  if not db or type(db.results) ~= "table" or type(db.browse) ~= "table" or type(db.browse.items) ~= "table" then return 0, 0 end
+  local cutoff = (now or time()) - Days("pruneDays", 1, 3650) * 86400
   local nr, nb = 0, 0
   for itemID, r in pairs(db.results) do
     if type(r.time) == "number" and r.time < cutoff then db.results[itemID] = nil; nr = nr + 1 end
@@ -120,12 +136,12 @@ function Store:PruneOld(now)
   return nr, nb
 end
 
--- Fold hourly records older than 30 days into daily { lo, avg, hi, n } (merged into an existing day).
+-- Fold hourly records older than historyDays into daily { lo, avg, hi, n } (merged into an existing day).
 -- Returns the number of hourly records folded.
 function Store:Compress(now)
-  local db = WaylaidCrateDB
+  local db = GetrichDB
   if not db or type(db.history) ~= "table" then return 0 end
-  local cutoff = math.floor((now or ServerNow()) / 3600) - KEEP_HOURS
+  local cutoff = math.floor((now or ServerNow()) / 3600) - Days("historyDays", 1, 3650) * 24
   local folded = 0
   for itemID, rec in pairs(db.history) do
     if type(rec) ~= "table" then
@@ -207,6 +223,12 @@ WC:On("RECIPES_UPDATED", Invalidate)
 WC:On("SETTINGS_CHANGED", Invalidate)
 WC:On("DB_READY", Invalidate)
 
+-- a shorter history / prune window takes effect right away
+WC:On("SETTINGS_CHANGED", function(key)
+  if not GetrichDB then return end
+  if key == "historyDays" then Store:Compress() elseif key == "pruneDays" then Store:PruneOld() end
+end)
+
 -- ---------------------------------------------------------------------------
 -- watch list
 
@@ -241,8 +263,8 @@ end
 -- t = observation time in epoch seconds (default: server time now). Returns true if stored.
 function Store:RecordHistory(itemID, min, qty, t)
   if type(min) ~= "number" or min <= 0 then return false end
-  if not WaylaidCrateDB or not self:IsRelevant(itemID) then return false end
-  local hist = WaylaidCrateDB.history
+  if not GetrichDB or not self:IsRelevant(itemID) then return false end
+  local hist = GetrichDB.history
   local rec = hist[itemID]
   if not rec then rec = { h = {}, d = {} }; hist[itemID] = rec end
   rec.h[math.floor((t or ServerNow()) / 3600)] = { min = min, qty = qty }
@@ -321,8 +343,23 @@ function WC:CostForAny(itemID, qty)
   local res, b = PickSearch(itemID)
   if res then
     local cost, status = WC:CostFor(itemID, qty)
-    local unit = (cost and qty > 0) and cost / qty or res.min
-    return cost, status, { unit = unit, time = res.time, source = "search", avail = res.avail }
+    local info = { time = res.time, source = "search", avail = res.avail }
+    if status == "short" and (tonumber(res.avail) or 0) >= qty then
+      -- Only the cheapest ~250 units are kept (Scanner KEEP_QTY), but the AH lists enough: price the rest at the
+      -- dearest kept unit price (a lower bound). CostFor itself stays exact for crates / writs.
+      local remain, last = qty, nil
+      cost = 0
+      for _, e in ipairs(res.entries or {}) do
+        local take = math.min(remain, e[2])
+        cost = cost + take * e[1]
+        remain = remain - take
+        last = e[1]
+      end
+      cost = cost + remain * (last or res.min or 0)
+      status, info.estDepth = "est", true
+    end
+    info.unit = (cost and qty > 0) and cost / qty or res.min
+    return cost, status, info
   end
   if b and b.min then
     local info = { unit = b.min, time = b.t, source = "browse", avail = b.qty }

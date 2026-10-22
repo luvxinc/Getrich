@@ -1,5 +1,5 @@
 
-WaylaidCrateDB = {
+GetrichDB = {
 ["autoScan"] = false,
 ["hideDone"] = true,
 ["hideNoWrit"] = true,

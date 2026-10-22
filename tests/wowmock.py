@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""wowmock - a strict mock of the WoW Forever 1.60.1 (build 70450) client for running WaylaidCrate under Lua 5.1 (lupa).
+"""wowmock - a strict mock of the WoW Forever 1.60.1 (build 70450) client for running Getrich under Lua 5.1 (lupa).
 
     from wowmock import WowClient
     c = WowClient(locale="zhCN")                 # strict by default; every item in tests/fixtures/items.json is cached
     c.load_sv("/home/claude/brief/sv/WaylaidCrate.lua")   # optional: SavedVariables applied before ADDON_LOADED
-    WC = c.load_addon("WaylaidCrate/WaylaidCrate.toc")    # runs the files in TOC order, fires ADDON_LOADED
+    WC = c.load_addon("Getrich/Getrich.toc")    # runs the files in TOC order, fires ADDON_LOADED
     c.login()                                    # PLAYER_LOGIN + PLAYER_ENTERING_WORLD
     c.set_listings(2589, [(10, 30), (12, 200)])  # AH rows (unit price, quantity) - row count != unit total
     c.open_ah(); c.advance(60)                   # simulated clock; timers only advance here
-    print(c.texts())                             # visible FontString texts of WaylaidCrateFrame
+    print(c.texts())                             # visible FontString texts of GetrichFrame
     assert not c.problems()                      # Lua errors, strict violations, unexpected globals
 
 Strictness (API surface from tests/fixtures/forever_api.json = the client's Blizzard_APIDocumentationGenerated, build 70450):
@@ -74,6 +74,9 @@ ALLOW_ABSENT = [
     "GetContainerItemLink", "GetContainerItemID", "GetSpellInfo", "IsAuctionHouseEnabled", "GetAuctionItemInfo",
     "InterfaceOptions_AddCategory", "EasyMenu", "GetItemQualityColor", "GetTradeSkillLine", "GetNumTradeSkills",
     "GetTradeSkillInfo", "GetCraftInfo", "GetNumCrafts", "UIDropDownMenu_EnableDropDown", "GetQuestsCompleted",
+    # classic-era trainer functions the Forever 1.60.1 UI never references (existence unverified: absent in the mock)
+    "GetTrainerServiceItemLink", "GetTrainerServiceDescription", "GetTrainerServiceIcon", "GetTrainerServiceLevelReq",
+    "GetTrainerGreetingText", "IsTrainerServiceLearnSpell",
     # frames / tables that exist only after a load-on-demand Blizzard addon loaded
     "AuctionHouseFrame", "AuctionHouseFrameDisplayMode", "ProfessionsFrame", "Professions", "ProfessionsUtil",
     "AuctionFrame", "TradeSkillFrame", "CraftFrame", "AuctionHouseUtil",
@@ -117,7 +120,7 @@ local function addonWhere(level)
     local info = getinfo(l, "Sl")
     if not info then break end
     local src = info.source or ""
-    if src:sub(1, 1) == "@" and src:find("WaylaidCrate/", 1, true) then return src:sub(2) .. ":" .. (info.currentline or 0) end
+    if src:sub(1, 1) == "@" and src:find("Getrich/", 1, true) then return src:sub(2) .. ":" .. (info.currentline or 0) end
   end
   return nil
 end
@@ -332,7 +335,7 @@ end
 setmetatable(_G, {
   __index = function(t, k)
     if type(k) ~= "string" then return nil end
-    if k:match("^WaylaidCrate") or k:match("^SLASH_WAYLAIDCRATE") then return nil end
+    if k:match("^Getrich") or k:match("^SLASH_GETRICH") then return nil end
     if ALLOW_ABSENT[k] then MOCK.absent[k] = (MOCK.absent[k] or 0) + 1; return nil end
     if DOC_GLOBALS[k] then gap(k); local f = gapStub(k); rawset(t, k, f); return f end
     if DOC_NS[k] then local ns = NS(k, {}); rawset(t, k, ns); return ns end
@@ -1752,28 +1755,285 @@ function PanelTemplates_EnableTab(frame, id) end
 function PanelTemplates_DisableTab(frame, id) end
 function PanelTemplates_ResizeTabsToFit() end
 
--- StaticPopup
+-- StaticPopup (Blizzard_StaticPopup): StaticPopup_Show returns the dialog frame; c.accept_popup() presses button1
 StaticPopupDialogs = {}
 MOCK.popups = {}
-function StaticPopup_Show(which, a, b, data)
+function StaticPopup_Show(which, a, b, data, insertedFrame)
+  if type(which) ~= "string" then MOCK.usage("Usage: StaticPopup_Show(which [, text_arg1, text_arg2, data])", 2) end
   local d = StaticPopupDialogs[which]
   if not d then return nil end
-  local p = { which = which, text = string.format(d.text or "", a or "", b or ""), data = data, dialog = d }
+  if type(d.text) ~= "string" then strictError("usage", "StaticPopupDialogs." .. which .. ".text", "StaticPopupDialogs['" .. which .. "'] has no text", 2) end
+  local p = { which = which, text = string.format(d.text or "", a or "", b or ""), data = data, dialog = d, shown = true }
+  for _, q in ipairs(MOCK.popups) do if q.which == which then q.shown = false end end
   MOCK.popups[#MOCK.popups + 1] = p
+  if d.OnShow then protected("StaticPopup OnShow", d.OnShow, p, data) end
   return p
 end
-function StaticPopup_Hide(which) end
-function StaticPopup_Visible(which) return nil end
+function StaticPopup_Hide(which) for _, q in ipairs(MOCK.popups) do if q.which == which then q.shown = false end end end
+function StaticPopup_Visible(which) for _, q in ipairs(MOCK.popups) do if q.which == which and q.shown then return which, q end end return nil end
+function MOCK.acceptPopup(which, button)
+  for i = #MOCK.popups, 1, -1 do
+    local q = MOCK.popups[i]
+    if q.shown and (not which or q.which == which) then
+      q.shown = false
+      local fn
+      if button == 2 then fn = q.dialog.OnCancel else fn = q.dialog.OnAccept end   -- cancel never accepts
+      if fn then protected("StaticPopup " .. (button == 2 and "OnCancel" or "OnAccept"), fn, q, q.data, q.data2) end
+      return q.which
+    end
+  end
+  return nil
+end
 
--- Settings
-Settings = {
-  RegisterCanvasLayoutCategory = function(frame, name) local c = { frame = frame, name = name, ID = name }; function c:GetID() return self.ID end; return c, {} end,
-  RegisterVerticalLayoutCategory = function(name) local c = { name = name, ID = name }; function c:GetID() return self.ID end; return c, {} end,
-  RegisterAddOnCategory = function(c) MOCK.settingsCategory = c end,
-  OpenToCategory = function(id) MOCK.settingsOpened = id; return true end,
-  RegisterAddOnSetting = function() return {} end,
-  CreateCheckbox = function() return {} end,
+-- Settings (Blizzard_Settings_Shared, loaded for every game type; verified in the mirror: Blizzard_Settings.lua,
+-- Blizzard_Category.lua, Blizzard_SettingsInbound.lua, Blizzard_SettingsPanel.lua). Strict: names that exist but are not
+-- modelled are mock gaps, other names raise.
+local SET = { categories = {}, byID = {}, addonCats = {}, settings = {}, valueCallbacks = {}, opened = nil, layouts = {} }
+MOCK.settings = SET
+local catSeq = 0
+local function strictObject(kind, obj, known)
+  return setmetatable(obj, { __index = function(_, k)
+    if type(k) ~= "string" then return nil end
+    if known and known[k] then MOCK.gap(kind .. ":" .. k); return function() end end
+    if k:match("^[A-Z]") then strictError("api", kind .. ":" .. k, kind .. " has no method " .. k .. " (Blizzard_Settings_Shared)", 2) end
+    return nil
+  end })
+end
+local function knownSet(list) local t = {}; for _, n in ipairs(list or {}) do t[n] = true end; return t end
+local MIX = API.settings_mixins or {}
+local CAT_KNOWN = knownSet(MIX.SettingsCategoryMixin)
+local SETTING_KNOWN = knownSet(MIX.SettingMixin)
+for _, n in ipairs(MIX.AddOnSettingMixin or {}) do SETTING_KNOWN[n] = true end
+local LAYOUT_KNOWN = knownSet(MIX.SettingsCanvasLayoutMixin)
+for _, n in ipairs(MIX.SettingsVerticalLayoutMixin or {}) do LAYOUT_KNOWN[n] = true end
+for _, n in ipairs(MIX.SettingsLayoutMixin or {}) do LAYOUT_KNOWN[n] = true end
+
+local function newCategory(name, parent)
+  if type(name) ~= "string" then MOCK.usage("Usage: Settings.Register...Category(..., name): name must be a string", 3) end
+  catSeq = catSeq + 1
+  local c = { ID = catSeq, name = name, order = catSeq, subcategories = {}, parent = parent }
+  function c:GetID() return self.ID end
+  function c:GetName() return self.name end
+  function c:SetName(n) self.name = n end
+  function c:GetOrder() return self.order end
+  function c:SetOrder(o) self.order = o end
+  function c:GetQualifiedName() return self.parent and (self.name .. " - " .. self.parent.name) or self.name end
+  function c:GetParentCategory() return self.parent end
+  function c:SetParentCategory(p) self.parent = p end
+  function c:HasParentCategory() return self.parent ~= nil end
+  function c:GetSubcategories() return self.subcategories end
+  function c:HasSubcategories() return #self.subcategories > 0 end
+  function c:SetExpanded(v) self.expanded = v end
+  function c:IsExpanded() return self.expanded == true end
+  function c:SetShouldSortAlphabetically(v) self.sortAlpha = v end
+  function c:ShouldSortAlphabetically() return self.sortAlpha ~= false end
+  strictObject("SettingsCategory", c, CAT_KNOWN)
+  SET.categories[#SET.categories + 1] = c
+  SET.byID[c.ID] = c
+  if parent then parent.subcategories[#parent.subcategories + 1] = c end
+  return c
+end
+local function newLayout(kind, frame)
+  local l = { kind = kind, frame = frame, anchors = {}, initializers = {} }
+  function l:GetLayoutType() return self.kind end
+  function l:GetFrame() return self.frame end
+  function l:AddAnchorPoint(p, x, y) self.anchors[#self.anchors + 1] = { p = p, x = x, y = y } end
+  function l:GetAnchorPoints() return self.anchors end
+  function l:AddInitializer(i) self.initializers[#self.initializers + 1] = i; return i end
+  function l:AddMirroredInitializer(i) return self:AddInitializer(i) end
+  function l:GetInitializers() return self.initializers end
+  function l:IsEmpty() return #self.initializers == 0 end
+  function l:EnumerateInitializers() return ipairs(self.initializers) end
+  return strictObject("SettingsLayout", l, LAYOUT_KNOWN)
+end
+local function registerCanvas(frame, name, parent)
+  if not isWidget(frame) then MOCK.usage("Usage: Settings.RegisterCanvasLayoutCategory(frame, name): frame must be a frame", 3) end
+  local c = newCategory(name, parent)
+  local l = newLayout(2, frame)            -- SettingsLayoutMixin.LayoutType.Canvas
+  SET.layouts[c] = l
+  return c, l
+end
+local function registerVertical(name, parent)
+  local c = newCategory(name, parent)
+  local l = newLayout(1)                   -- SettingsLayoutMixin.LayoutType.Vertical
+  SET.layouts[c] = l
+  return c, l
+end
+local function layoutOf(category, fname)
+  local l = type(category) == "table" and SET.layouts[category]
+  if not l then MOCK.usage("Usage: Settings." .. fname .. "(category, ...): category must come from Settings.Register*Category", 3) end
+  return l
+end
+local function newSetting(name, variable, vtype, default, get, set)
+  if type(variable) ~= "string" then MOCK.usage("Settings: variable must be a string", 4) end
+  if vtype ~= "boolean" and vtype ~= "number" and vtype ~= "string" then MOCK.usage("Settings: variableType must be Settings.VarType.Boolean/Number/String", 4) end
+  local st = { name = name, variable = variable, vtype = vtype, default = default, get = get, set = set, callbacks = {} }
+  function st:GetName() return self.name end
+  function st:GetVariable() return self.variable end
+  function st:GetVariableType() return self.vtype end
+  function st:GetDefaultValue() return self.default end
+  function st:GetValue() local v = self.get(); if v == nil then return self.default end; return v end
+  function st:SetValue(v)
+    if type(v) ~= self.vtype then MOCK.usage("Setting '" .. self.variable .. "':SetValue(): expected " .. self.vtype .. ", got " .. type(v), 2) end
+    self.set(v)
+    for _, cb in ipairs(self.callbacks) do protected("Setting callback " .. self.variable, cb, nil, self, v) end
+    for _, cb in ipairs(SET.valueCallbacks[self.variable] or {}) do protected("Settings.SetOnValueChangedCallback " .. self.variable, cb.fn, cb.owner, self, v) end
+    return true
+  end
+  function st:SetValueToDefault() return self:SetValue(self.default) end
+  function st:SetValueChangedCallback(cb) self.callbacks[#self.callbacks + 1] = cb end
+  function st:NotifyUpdate() end
+  function st:IsModified() return self:GetValue() ~= self.default end
+  function st:SetCommitFlags() end
+  strictObject("Setting", st, SETTING_KNOWN)
+  SET.settings[variable] = st
+  return st
+end
+local function initializer(template, data)
+  local i = { template = template, data = data or {}, shown = {} }
+  function i:GetData() return self.data end
+  function i:GetSetting() return self.data.setting end
+  function i:AddShownPredicate(fn) self.shown[#self.shown + 1] = fn end
+  function i:AddSearchTags() end
+  function i:SetParentInitializer(p, fn) self.parentInit = p end
+  function i:AddModifyPredicate() end
+  function i:SetSetting(st) self.data.setting = st end
+  function i:GetTemplate() return self.template end
+  function i:GetExtent() return self.extent end
+  function i:SetExtent(e) self.extent = e end
+  return i
+end
+local function addControl(category, fname, template, st, options, tooltip)
+  local l = layoutOf(category, fname)
+  if type(st) ~= "table" or not st.GetVariableType then MOCK.usage("Usage: Settings." .. fname .. "(category, setting, ...): setting from Settings.RegisterAddOnSetting/RegisterProxySetting", 3) end
+  local i = initializer(template, { setting = st, name = st:GetName(), options = options or {}, tooltip = tooltip })
+  i.isSettingElement = true
+  l:AddInitializer(i)
+  return i
+end
+local SettingsImpl = {
+  VarType = { Boolean = "boolean", String = "string", Number = "number" },
+  Default = { True = true, False = false },
+  CategorySet = { Game = 1, AddOns = 2 },
+  ControlType = { Radio = 1, Checkbox = 2 },
+  CommitFlag = { None = 0, ClientRestart = 1, GxRestart = 2, UpdateWindow = 4, SaveBindings = 8, Revertable = 16, Apply = 32, IgnoreApply = 64, KioskProtected = 128, UIReload = 256 },
+  RegisterCanvasLayoutCategory = function(frame, name) return registerCanvas(frame, name) end,
+  RegisterCanvasLayoutSubcategory = function(parent, frame, name) layoutOf(parent, "RegisterCanvasLayoutSubcategory"); return registerCanvas(frame, name, parent) end,
+  RegisterVerticalLayoutCategory = function(name) return registerVertical(name) end,
+  RegisterVerticalLayoutSubcategory = function(parent, name) layoutOf(parent, "RegisterVerticalLayoutSubcategory"); return registerVertical(name, parent) end,
+  RegisterAddOnCategory = function(category)
+    layoutOf(category, "RegisterAddOnCategory")
+    if category.parent then MOCK.usage("Settings.RegisterAddOnCategory: register the top category, not a subcategory", 2) end
+    SET.addonCats[#SET.addonCats + 1] = category
+    category.addon = true
+  end,
+  RegisterCategory = function(category, group) layoutOf(category, "RegisterCategory"); category.group = group end,
+  CreateCategory = function(name) return newCategory(name) end,
+  GetCategory = function(name) for _, c in ipairs(SET.categories) do if c.name == name or c.ID == name then return c end end end,
+  OpenToCategory = function(categoryID, scrollTo)
+    if InCombatLockdown() then return false end
+    local c = (type(categoryID) == "number") and SET.byID[categoryID] or nil
+    if not c then
+      -- the real panel looks the ID up with category:GetID() == categoryID and silently opens nothing otherwise
+      MOCK.violation("usage", "Settings.OpenToCategory(" .. type(categoryID) .. "): not a registered category ID (pass category:GetID())", 2)
+      SettingsPanel:Show()
+      return false
+    end
+    MOCK.openSettingsCategory(c)
+    return true
+  end,
+  RegisterAddOnSetting = function(categoryTbl, variable, variableKey, variableTbl, variableType, name, defaultValue)
+    layoutOf(categoryTbl, "RegisterAddOnSetting")
+    if type(variableTbl) ~= "table" then MOCK.usage("Usage: Settings.RegisterAddOnSetting(category, variable, variableKey, variableTbl, variableType, name, defaultValue)", 2) end
+    if variableKey == nil then MOCK.usage("Settings.RegisterAddOnSetting: variableKey is required", 2) end
+    return newSetting(name, variable, variableType, defaultValue,
+      function() return variableTbl[variableKey] end, function(v) variableTbl[variableKey] = v end)
+  end,
+  RegisterProxySetting = function(categoryTbl, variable, variableType, name, defaultValue, getValue, setValue)
+    layoutOf(categoryTbl, "RegisterProxySetting")
+    if type(getValue) ~= "function" or type(setValue) ~= "function" then MOCK.usage("Usage: Settings.RegisterProxySetting(category, variable, variableType, name, defaultValue, getValue, setValue)", 2) end
+    return newSetting(name, variable, variableType, defaultValue, getValue, setValue)
+  end,
+  CreateCheckbox = function(category, st, tooltip) return addControl(category, "CreateCheckbox", "SettingsCheckboxControlTemplate", st, nil, tooltip) end,
+  CreateCheckboxWithOptions = function(category, st, options, tooltip) return addControl(category, "CreateCheckboxWithOptions", "SettingsCheckboxControlTemplate", st, options, tooltip) end,
+  CreateSlider = function(category, st, options, tooltip)
+    if type(options) ~= "table" then MOCK.usage("Settings.CreateSlider(category, setting, options, tooltip): options from Settings.CreateSliderOptions", 2) end
+    return addControl(category, "CreateSlider", "SettingsSliderControlTemplate", st, options, tooltip)
+  end,
+  CreateDropdown = function(category, st, options, tooltip)
+    if options == nil then MOCK.usage("Settings.CreateDropdown(category, setting, options, tooltip): options required", 2) end
+    return addControl(category, "CreateDropdown", "SettingsDropdownControlTemplate", st, options, tooltip)
+  end,
+  CreateSliderOptions = function(minValue, maxValue, rate)
+    local o = { minValue = minValue or 0, maxValue = maxValue or 1, steps = (rate and (maxValue - minValue) / rate) or 100, rate = rate }
+    function o:SetLabelFormatter(labelType, value) self.formatters = self.formatters or {}; self.formatters[labelType] = value end
+    return o
+  end,
+  CreateControlTextContainer = function()
+    local c = { data = {} }
+    function c:Add(value, label, tooltip) self.data[#self.data + 1] = { value = value, label = label, text = label, tooltip = tooltip }; return self.data[#self.data] end
+    function c:AddCheckbox(value, label, tooltip) return self:Add(value, label, tooltip) end
+    function c:GetData() return self.data end
+    return c
+  end,
+  CreateElementInitializer = function(template, data) return initializer(template, data) end,
+  CreatePanelInitializer = function(template, data) return initializer(template, data) end,
+  CreateSettingInitializer = function(template, data) local i = initializer(template, data); i.isSettingElement = true; return i end,
+  CreateControlInitializer = function(template, st, options, tooltip) return initializer(template, { setting = st, options = options, tooltip = tooltip }) end,
+  CreateSettingInitializerData = function(st, options, tooltip) return { setting = st, name = st:GetName(), options = options or {}, tooltip = tooltip } end,
+  RegisterInitializer = function(category, i) layoutOf(category, "RegisterInitializer"):AddInitializer(i) end,
+  SetOnValueChangedCallback = function(variable, cb, owner)
+    if type(cb) ~= "function" then MOCK.usage("Usage: Settings.SetOnValueChangedCallback(variable, callback, owner)", 2) end
+    local l = SET.valueCallbacks[variable]; if not l then l = {}; SET.valueCallbacks[variable] = l end
+    l[#l + 1] = { fn = cb, owner = owner }
+  end,
+  GetSetting = function(variable) return SET.settings[variable] end,
+  GetValue = function(variable) local st = SET.settings[variable]; return st and st:GetValue() end,
+  SetValue = function(variable, v) local st = SET.settings[variable]; if st then return st:SetValue(v) end end,
+  NotifyUpdate = function(variable) end,
+  CallWhenRegistered = function(variable, cb) cb() end,
+  IsCommitInProgress = function() return false end,
+  AssignLayoutToCategory = function(category, layout) SET.layouts[category] = layout end,
 }
+local SETTINGS_KNOWN = knownSet(API.settings_functions)
+Settings = setmetatable(SettingsImpl, { __index = function(_, k)
+  if type(k) ~= "string" then return nil end
+  if SETTINGS_KNOWN[k] then MOCK.gap("Settings." .. k); return function() end end
+  strictError("api", "Settings." .. k, "Settings." .. k .. " does not exist on the Forever client (Blizzard_Settings_Shared)", 2)
+end })
+MinimalSliderWithSteppersMixin = { Label = { Left = 0, Right = 1, Top = 2, Min = 3, Max = 4 } }
+function CreateMinimalSliderFormatter(labelType, value) return { labelType = labelType, value = value } end
+function MOCK.openSettingsCategory(c)
+  local panel = SettingsPanel
+  panel:Show()
+  local old = SET.opened
+  if old and old ~= c then
+    local ol = SET.layouts[old]
+    if ol and ol.kind == 2 and ol.frame then ol.frame:SetParent(nil); ol.frame:ClearAllPoints(); ol.frame:Hide() end
+  end
+  SET.opened = c
+  local l = SET.layouts[c]
+  if l and l.kind == 2 and l.frame then
+    local f = l.frame
+    f:SetParent(panel.Container.SettingsCanvas)
+    f:ClearAllPoints()
+    if #l.anchors > 0 then for _, a in ipairs(l.anchors) do f:SetPoint(a.p, a.x, a.y) end else f:SetAllPoints(panel.Container.SettingsCanvas) end
+    f:Show()
+    if f.OnRefresh then protected("Settings canvas OnRefresh", f.OnRefresh, f) end
+  end
+  MOCK.fire("SETTINGS_PANEL_OPEN")
+end
+function MOCK.closeSettings(commit)
+  local c = SET.opened
+  local l = c and SET.layouts[c]
+  if l and l.kind == 2 and l.frame then
+    local f = l.frame
+    if commit ~= false and f.OnCommit then protected("Settings canvas OnCommit", f.OnCommit, f) end
+    f:SetParent(nil); f:ClearAllPoints(); f:Hide()
+  end
+  SET.opened = nil
+  if SettingsPanel then SettingsPanel:Hide() end
+end
 
 -- GameTooltip helpers
 function GameTooltip_Hide() GameTooltip:Hide() end
@@ -2122,15 +2382,20 @@ local fire, after = MOCK.fire, MOCK.after
 MOCK.player = { guid = CFG.char, name = "Aaron", realm = "Classic Beta PvP 2", nrealm = "ClassicBetaPvP2", class = "WARRIOR", className = "Warrior",
   level = CFG.level or 25, faction = "Horde", money = 1234567, race = "Orc" }
 MOCK.loggedIn = false
+local function npcWindow()
+  if MOCK.merchant and MOCK.merchant.open then return MOCK.merchant end
+  if MOCK.trainer and MOCK.trainer.open then return MOCK.trainer end
+end
+MOCK.npcWindow = npcWindow
 function UnitGUID(unit)
   if unit == "player" then return MOCK.player.guid end
-  if unit == "npc" and MOCK.merchant and MOCK.merchant.open then return "Creature-0-4613-1-1-" .. MOCK.merchant.npcID .. "-0000ABCDEF" end
+  if unit == "npc" and npcWindow() then return "Creature-0-4613-1-1-" .. npcWindow().npcID .. "-0000ABCDEF" end
   if unit == "target" and MOCK.target then return MOCK.target end
   return nil
 end
 function UnitName(unit)
   if unit == "player" then return MOCK.player.name, nil end
-  if unit == "npc" and MOCK.merchant and MOCK.merchant.open then return MOCK.merchant.name, nil end
+  if unit == "npc" and npcWindow() then return npcWindow().name, nil end
   return nil
 end
 function UnitFullName(unit) if unit == "player" then return MOCK.player.name, MOCK.loggedIn and MOCK.player.nrealm or nil end end
@@ -2139,7 +2404,7 @@ function UnitClassBase(unit) if unit == "player" then return MOCK.player.class, 
 function UnitRace(unit) if unit == "player" then return MOCK.player.race, MOCK.player.race, 2 end end
 function UnitLevel(unit) if unit == "player" then return MOCK.player.level end; return 0 end
 function UnitFactionGroup(unit) if unit == "player" or unit == "npc" then return MOCK.player.faction, MOCK.player.faction end end
-function UnitExists(unit) return unit == "player" or (unit == "npc" and MOCK.merchant ~= nil and MOCK.merchant.open) end
+function UnitExists(unit) return unit == "player" or (unit == "npc" and npcWindow() ~= nil) end
 function UnitIsUnit(a, b) return a == b end
 function UnitAffectingCombat() return MOCK.inCombat == true end
 function GetRealmName() return MOCK.player.realm end
@@ -2182,7 +2447,7 @@ C_AddOns = NS("C_AddOns", {
   IsAddOnLoaded = function(name) return MOCK.loadedAddons[name] == true, MOCK.loadedAddons[name] == true end,
   LoadAddOn = function(name) if MOCK.lodLoaders[name] then MOCK.lodLoaders[name](); return true end; return MOCK.loadedAddons[name] == true end,
   GetNumAddOns = function() return 1 end,
-  GetAddOnInfo = function(i) return "WaylaidCrate", "Waylaid Crate", "", true, "INSECURE", false end,
+  GetAddOnInfo = function(i) return "Getrich", "Getrich", "", true, "INSECURE", false end,
   DoesAddOnExist = function(name) return MOCK.addonMeta[name] ~= nil or MOCK.lodLoaders[name] ~= nil end,
   IsAddOnLoadOnDemand = function(name) return MOCK.lodLoaders[name] ~= nil end,
   GetAddOnEnableState = function() return 2 end,
@@ -2829,9 +3094,17 @@ C_TradeSkillUI = NS("C_TradeSkillUI", {
     if type(id) ~= "number" then MOCK.usage("Usage: C_TradeSkillUI.GetRecipeInfo(recipeSpellID [, recipeLevel])", 2) end
     if not recipeVisible(id) then return nil end
     local r = MOCK.recipes[id]
+    -- difficulty from the recipe's yellow / grey skill (SkillLineAbility) and the profession's current rank
+    local rank = 0
+    for _, p in ipairs(MOCK.profs) do if p.skillLine == r.skillLine then rank = p.rank end end
+    local y, g = r.y, r.g
+    local diff, maxT = 1, g or 0
+    if y and g then
+      if rank >= g then diff = 3 elseif rank < y then diff = 0 elseif rank < math.floor((y + g) / 2) then diff = 1 else diff = 2 end
+    end
     return { recipeID = id, name = r.name, categoryID = r.categoryID or 1, learned = r.learned, disabled = false, favorite = false,
-             craftable = true, supportsQualities = false, relativeDifficulty = 1, maxTrivialLevel = 100, itemLevel = 0, numSkillUps = 1,
-             canSkillUp = true, firstCraft = false, skillLineAbilityID = id, icon = 136240, hyperlink = nil, isRecraft = false,
+             craftable = true, supportsQualities = false, relativeDifficulty = diff, maxTrivialLevel = maxT, itemLevel = 0, numSkillUps = r.su or 1,
+             canSkillUp = (g == nil) or rank < g, firstCraft = false, skillLineAbilityID = r.ab or id, icon = 136240, hyperlink = nil, isRecraft = false,
              isDummyRecipe = false, isGatheringRecipe = false, isEnchantingRecipe = r.output == nil and r.skillLine == 333, isSalvageRecipe = false,
              hasSingleItemOutput = r.output ~= nil, alternateVerb = (r.output == nil and r.skillLine == 333) and "Enchant" or nil }
   end,
@@ -2910,6 +3183,164 @@ function GetMerchantItemMaxStack(i) local e = mitem(i); return e and (ITEMS[e.it
 function GetMerchantNumBuybackItems() return 0 end
 function CanMerchantRepair() return false end
 
+-- ------------------------------------------------------------------------------------- trainer
+-- Legacy globals as Blizzard_TrainerUI/Mainline/Blizzard_TrainerUI.lua (Forever 1.60.1) calls them, plus C_Trainer
+-- (TrainerDocumentation.lua). Only names the Forever UI source references are modelled; other classic-era trainer
+-- functions (GetTrainerServiceItemLink, GetTrainerServiceDescription, GetTrainerGreetingText, ...) are not referenced
+-- anywhere in the 1.60.1 UI: absent here (probing them returns nil, calling them fails). Behaviour modelled:
+--   * the service list is filtered by the type filter (available / unavailable / used; default: used hidden);
+--     indexes address the FILTERED list; SetTrainerServiceTypeFilter fires TRAINER_UPDATE synchronously
+--     (TrainerUpdate is a SynchronousEvent) and the filter stays as set for the session (the user's state)
+--   * GetTrainerServiceInfo -> name, type, texture, reqLevel, subText, category; the name is nil until the spell
+--     name is known (TRAINER_SERVICE_INFO_NAME_UPDATE), as the Blizzard UI's "UNKNOWN" fallback expects
+--   * GetTrainerServiceSkillReq -> skill name, rank, hasReq; GetTrainerServiceCost -> copper, isProfession
+--   * GetTrainerServiceStepIndex -> index of the profession-rank service (Journeyman ...) or nil
+--   * TRAINER_SHOW (+ PLAYER_INTERACTION_MANAGER_FRAME_SHOW Trainer), TRAINER_CLOSED; Blizzard_TrainerUI is load-on-demand
+--   * BuyTrainerService from addon code is recorded as a violation (it spends the player's money)
+MOCK.trainer = nil
+MOCK.trainerFilter = { available = true, unavailable = true, used = false }
+MOCK.trainerStats = { filterSets = 0, infoCalls = 0 }
+local function openTrainer() local t = MOCK.trainer; if t and t.open then return t end end
+local function playerSkill(skillLine)
+  for _, p in ipairs(MOCK.profs) do if p.skillLine == skillLine then return p.rank, p.max end end
+  return 0, 0
+end
+local function serviceType(t, sv)
+  if sv.learned then return "used" end
+  local rank = playerSkill(t.skillLine)
+  if (sv.req or 0) <= rank and (sv.level or 0) <= MOCK.player.level then return "available" end
+  return "unavailable"
+end
+local function visibleServices()
+  local t = openTrainer(); if not t then return {} end
+  local out = {}
+  for _, sv in ipairs(t.services) do
+    if MOCK.trainerFilter[serviceType(t, sv)] then out[#out + 1] = sv end
+  end
+  return out
+end
+local function service(i, usage)
+  if type(i) ~= "number" then MOCK.usage("Usage: " .. usage, 3) end
+  return visibleServices()[i]
+end
+local FILTER_TYPES = { available = true, unavailable = true, used = true }
+function GetNumTrainerServices() return #visibleServices() end
+function GetTrainerServiceInfo(i)
+  local sv = service(i, "GetTrainerServiceInfo(index)"); if not sv then return nil end
+  MOCK.trainerStats.infoCalls = MOCK.trainerStats.infoCalls + 1
+  return sv.nameKnown and sv.name or nil, serviceType(MOCK.trainer, sv), sv.icon or 136243, sv.level or 1, sv.subText or "", nil
+end
+function GetTrainerServiceSkillReq(i)
+  local sv = service(i, "GetTrainerServiceSkillReq(index)"); if not sv or not sv.req then return nil end
+  local t = MOCK.trainer
+  return t.skillName, sv.req, playerSkill(t.skillLine) >= sv.req
+end
+function GetTrainerServiceCost(i)
+  local sv = service(i, "GetTrainerServiceCost(index)"); if not sv then return 0, false end
+  return sv.cost or 0, sv.step == true
+end
+function GetTrainerServiceNumAbilityReq(i) service(i, "GetTrainerServiceNumAbilityReq(index)"); return 0 end
+function GetTrainerServiceAbilityReq(i, j) service(i, "GetTrainerServiceAbilityReq(index, reqIndex)"); return nil end
+function GetTrainerServiceSkillLine(i) local sv = service(i, "GetTrainerServiceSkillLine(index)"); return sv and MOCK.trainer.skillName or nil end
+function GetTrainerServiceStepIndex()
+  for i, sv in ipairs(visibleServices()) do if sv.step then return i end end
+  return nil
+end
+function GetTrainerTradeskillRankValues()
+  local t = openTrainer(); if not t or not t.tradeskill then return 0, 0, 0 end
+  local rank, max = playerSkill(t.skillLine)
+  return rank, max, 0
+end
+function GetTrainerSelectionIndex() local t = openTrainer(); return t and t.selected or 0 end
+function SelectTrainerService(i) local t = openTrainer(); if t then t.selected = i; fire("TRAINER_DESCRIPTION_UPDATE") end end
+function BuyTrainerService(i)
+  local w = addonWhere(2)
+  if w then MOCK.violation("protected", "BuyTrainerService (addon code spends the player's money)", 2) end
+  local sv = service(i, "BuyTrainerService(index)"); if not sv then return end
+  sv.learned = true
+  fire("TRAINER_UPDATE")
+end
+function IsTradeskillTrainer() local t = openTrainer(); return t ~= nil and t.tradeskill == true end
+function GetTrainerServiceTypeFilter(kind)
+  if not FILTER_TYPES[kind] then MOCK.usage("Usage: GetTrainerServiceTypeFilter(\"available\"|\"unavailable\"|\"used\")", 2) end
+  return MOCK.trainerFilter[kind] == true
+end
+function SetTrainerServiceTypeFilter(kind, on, exclusive)
+  if not FILTER_TYPES[kind] then MOCK.usage("Usage: SetTrainerServiceTypeFilter(\"available\"|\"unavailable\"|\"used\", enabled [, exclusive])", 2) end
+  if exclusive then for k in pairs(FILTER_TYPES) do MOCK.trainerFilter[k] = false end end
+  MOCK.trainerFilter[kind] = (on == true or on == 1)
+  MOCK.trainerStats.filterSets = MOCK.trainerStats.filterSets + 1
+  if openTrainer() then fire("TRAINER_UPDATE") end
+end
+function CloseTrainer() if MOCK.closeTrainer then MOCK.closeTrainer() end end
+-- C_TooltipInfo.GetTrainerService (TooltipInfoDocumentation.lua, MayReturnNothing): what the client puts in the
+-- TooltipData of a trainer service is not visible in the UI source, so the mode is a test parameter:
+-- "item" (default: the crafted item, TooltipDataType.Item + itemID; spell for recipes without a product),
+-- "spell" (TooltipDataType.Spell + the recipe's spellID), "teach" (TooltipDataType.Spell + the service's teaching
+-- spell, sv.teachSpellID - not a recipe of the line), "none" (returns nothing).
+MOCK.trainerTooltip = "item"
+C_TooltipInfo = NS("C_TooltipInfo", {
+  GetTrainerService = function(i)
+    local sv = service(i, "C_TooltipInfo.GetTrainerService(serviceIndex)"); if not sv then return nil end
+    local mode = MOCK.trainerTooltip
+    if mode == "none" or not sv.nameKnown then return nil end
+    local line = { { leftText = sv.name, type = 0 } }
+    if mode == "item" and sv.itemID then return { type = Enum.TooltipDataType.Item, id = sv.itemID, lines = line } end
+    if mode == "teach" and sv.teachSpellID then return { type = Enum.TooltipDataType.Spell, id = sv.teachSpellID, lines = line } end
+    if sv.spellID and sv.spellID > 0 then return { type = Enum.TooltipDataType.Spell, id = sv.spellID, lines = line } end
+    return { lines = line }
+  end,
+})
+local categorize = false
+C_Trainer = NS("C_Trainer", {
+  GetTrainerType = function() local t = openTrainer(); return t and t.trainerType or Enum.TrainerType.General end,
+  GetCategorizeTrainerUI = function() return categorize end,
+  SetCategorizeTrainerUI = function(v) categorize = v and true or false end,
+})
+function MOCK.loadTrainerUI()
+  if MOCK.loadedAddons.Blizzard_TrainerUI then return end
+  MOCK.blizzardDepth = (MOCK.blizzardDepth or 0) + 1
+  local f = CreateFrame("Frame", "ClassTrainerFrame", UIParent)
+  f._w, f._h = 338, 424
+  f._shown = false
+  MOCK.blizzardDepth = MOCK.blizzardDepth - 1
+  MOCK.loadedAddons.Blizzard_TrainerUI = true
+  MOCK.lodLoaders.Blizzard_TrainerUI = nil
+  fire("ADDON_LOADED", "Blizzard_TrainerUI", false)
+end
+MOCK.lodLoaders.Blizzard_TrainerUI = function() MOCK.loadTrainerUI() end
+-- t = { npcID, name, skillLine, skillName, tradeskill = true, trainerType, services = { { spellID, name, req, cost,
+--       level, learned, step, nameDelay } } }
+function MOCK.openTrainer(t)
+  if MOCK.trainer and MOCK.trainer.open then MOCK.closeTrainer() end
+  MOCK.trainer = t; t.open = true
+  t.trainerType = t.trainerType or (t.tradeskill and Enum.TrainerType.Tradeskills or Enum.TrainerType.General)
+  local late = {}
+  for _, sv in ipairs(t.services) do
+    sv.nameKnown = not (sv.nameDelay and sv.nameDelay > 0)
+    if not sv.nameKnown then late[#late + 1] = sv end
+  end
+  fire("PLAYER_INTERACTION_MANAGER_FRAME_SHOW", Enum.PlayerInteractionType.Trainer)
+  MOCK.loadTrainerUI()
+  fire("TRAINER_SHOW")
+  ClassTrainerFrame:Show()
+  for _, sv in ipairs(late) do
+    MOCK.after(sv.nameDelay, function()
+      if MOCK.trainer ~= t or not t.open then return end
+      sv.nameKnown = true
+      fire("TRAINER_SERVICE_INFO_NAME_UPDATE")
+    end, "trainer-name")
+  end
+end
+function MOCK.closeTrainer()
+  local t = MOCK.trainer
+  if not (t and t.open) then return end
+  t.open = false
+  if ClassTrainerFrame then ClassTrainerFrame:Hide() end
+  fire("TRAINER_CLOSED")
+  fire("PLAYER_INTERACTION_MANAGER_FRAME_HIDE", Enum.PlayerInteractionType.Trainer)
+end
+
 -- ------------------------------------------------------------------------------------- loot + spellcasting
 MOCK.loot = nil
 function GetNumLootItems() return MOCK.loot and #MOCK.loot.items or 0 end
@@ -2955,6 +3386,16 @@ rawset(DEFAULT_CHAT_FRAME, "AddMessage", function(self, msg, r, g, b)
   MOCK.chat[#MOCK.chat + 1] = { t = MOCK.clock.now, msg = tostring(msg) }
 end)
 SELECTED_CHAT_FRAME = DEFAULT_CHAT_FRAME
+SettingsPanel = newWidget("Frame", "SettingsPanel", UIParent); MOCK.frames[#MOCK.frames + 1] = SettingsPanel
+SettingsPanel._w, SettingsPanel._h = 1000, 700
+SettingsPanel._points = { { "CENTER", UIParent, "CENTER", 0, 0 } }
+SettingsPanel._shown = false
+local spc = newWidget("Frame", nil, SettingsPanel); rawset(SettingsPanel, "Container", spc)
+spc._points = { { "TOPLEFT", SettingsPanel, "TOPLEFT", 230, -60 }, { "BOTTOMRIGHT", SettingsPanel, "BOTTOMRIGHT", -20, 40 } }
+local canvas = newWidget("Frame", nil, spc); rawset(spc, "SettingsCanvas", canvas)
+canvas._points = { { "TOPLEFT", spc, "TOPLEFT", 0, 0 }, { "BOTTOMRIGHT", spc, "BOTTOMRIGHT", 0, 0 } }
+rawset(SettingsPanel, "Open", function(self) self:Show() end)
+rawset(SettingsPanel, "GetSettingsCanvas", function(self) return self.Container.SettingsCanvas end)
 MOCK.blizzardDepth = 0
 SlashCmdList = {}
 UISpecialFrames = {}
@@ -3390,6 +3831,8 @@ class WowClient:
             "soundkit": L(api["soundkit"]),
             "allow_absent": sets(ALLOW_ABSENT),
             "scrollbox_methods": L(api.get("scrollbox_methods", [])),
+            "settings_functions": L(api.get("settings_functions", [])),
+            "settings_mixins": L({k: L(v) for k, v in api.get("settings_mixins", {}).items()}),
         })
         cfg = L({"strict": strict, "locale": locale, "char": char, "clock0": 1000.0, "server0": server_time,
                  "verbose": verbose, "level": level})
@@ -3413,6 +3856,8 @@ class WowClient:
             self.add_item(int(k), **v)
         if cached:
             self.lua.execute("for id in pairs(__WOWMOCK.ITEMS) do __WOWMOCK.CACHED[id] = true end")
+        names = {int(k): v for k, v in _json("recipes.json").get("spells", {}).items()}
+        self.lua.eval("function(t) for id, name in pairs(t) do if not __WOWMOCK.spells[id] then __WOWMOCK.spells[id] = { name = name, known = false } end end end")(self.lua.table_from(names))
         self.WC = None
         self.sv_text = None
         self.toc = None
@@ -3480,9 +3925,30 @@ class WowClient:
                              "qmin": r.get("qmin", 1), "qmax": r.get("qmax", 1),
                              "reagents": [list(x) for x in r.get("reagents", [])], "tools": r.get("tools", []),
                              "learned": r.get("learned", True), "categoryID": r.get("categoryID", 1)}
+            for k in ("y", "g", "su", "ab"):
+                if r.get(k) is not None:
+                    out[int(rid)][k] = r[k]
             if out[int(rid)]["output"] is None:
                 del out[int(rid)]["output"]
         self.M.recipes = self.table(out)
+
+    def set_skill(self, skill_line, rank, max_rank=None, message=True):
+        """The character's skill in a profession changed (a skill-up): SKILL_LINES_CHANGED + CHAT_MSG_SKILL,
+        and TRADE_SKILL_LIST_UPDATE when that profession is open."""
+        profs = self.M.profs
+        for i in range(1, len(profs) + 1):
+            p = profs[i]
+            if p.skillLine == skill_line:
+                p.rank = rank
+                if max_rank is not None:
+                    p["max"] = max_rank
+                if message:
+                    self.fire("CHAT_MSG_SKILL", "Your skill in %s has increased to %d." % (p.name, rank))
+                self.fire("SKILL_LINES_CHANGED")
+                if self.M.TS.open == skill_line and self.M.TS.ready:
+                    self.fire("TRADE_SKILL_LIST_UPDATE")
+                return True
+        raise KeyError(skill_line)
 
     def learn_disenchant(self, known=True):
         self.M.spells[13262].known = known
@@ -3496,7 +3962,7 @@ class WowClient:
         else:
             self.sv_text = path_or_text
 
-    def load_addon(self, toc="WaylaidCrate/WaylaidCrate.toc", fire_loaded=True):
+    def load_addon(self, toc="Getrich/Getrich.toc", fire_loaded=True):
         toc_path = toc if os.path.isabs(toc) else os.path.join(REPO, toc)
         addon_dir = os.path.dirname(toc_path)
         addon = os.path.splitext(os.path.basename(toc_path))[0]
@@ -3697,6 +4163,35 @@ class WowClient:
     def close_merchant(self):
         self.M.closeMerchant()
 
+    def open_trainer(self, npc_id, name, skill_line, services, tradeskill=True, tooltip="item"):
+        """A profession trainer window. services: [{spellID, itemID (crafted item, for the tooltip data), req (skill),
+        cost (copper), learned=False, level=1, step=False (the profession-rank service), name (default: the spell's
+        name), nameDelay (seconds until the client knows the name; GetTrainerServiceInfo returns nil before)}].
+        tooltip: what C_TooltipInfo.GetTrainerService returns - "item" | "spell" | "teach" (teachSpellID) | "none"."""
+        self.M.trainerTooltip = tooltip
+        sv = []
+        for e in services:
+            d = {"level": 1, "learned": False, "step": False}
+            d.update(e)
+            if "name" not in d:
+                sp = self.M.spells[d["spellID"]]
+                d["name"] = sp.name if sp is not None else ("Spell %d" % d["spellID"])
+            sv.append(d)
+        self.M.openTrainer(self.table({"npcID": npc_id, "name": name, "skillLine": skill_line,
+                                       "skillName": self.M.PROF_NAMES[skill_line], "tradeskill": tradeskill, "services": sv}))
+
+    def close_trainer(self):
+        self.M.closeTrainer()
+
+    def trainer_filter(self):
+        f = self.M.trainerFilter
+        return {k: bool(f[k]) for k in ("available", "unavailable", "used")}
+
+    def set_trainer_filter(self, **kw):
+        """The user's filter choice (as the Blizzard filter menu sets it), without firing events."""
+        for k, v in kw.items():
+            self.M.trainerFilter[k] = bool(v)
+
     def set_bags(self, contents):
         """contents: {(bag, slot): (itemID, count)}"""
         self.lua.execute("for b = 0, 4 do __WOWMOCK.BAGS[b] = {} end")
@@ -3731,6 +4226,32 @@ class WowClient:
         self.M.lootWindow(self.table([list(x) for x in loot]), source)
         self.advance(1)
 
+    def accept_popup(self, which=None, cancel=False):
+        """Press the first button (or cancel) of the newest shown StaticPopup; returns its name or None."""
+        return self.M.acceptPopup(which, 2 if cancel else 1)
+
+    def popups(self, shown_only=True):
+        p = self.M.popups
+        return [(p[i].which, p[i].text) for i in range(1, len(p) + 1) if p[i].shown or not shown_only]
+
+    def settings_categories(self):
+        """Categories registered with Settings: list of dicts {id, name, addon, kind ('canvas'|'vertical'), frame}."""
+        S = self.M.settings
+        out = []
+        for i in range(1, len(S.categories) + 1):
+            c = S.categories[i]
+            l = S.layouts[c]
+            out.append({"id": int(c.ID), "name": c.name, "addon": bool(c.addon), "parent": c.parent.name if c.parent else None,
+                        "kind": ("canvas" if l and l.kind == 2 else "vertical"), "frame": l.frame if l else None, "cat": c, "layout": l})
+        return out
+
+    def settings_opened(self):
+        c = self.M.settings.opened
+        return None if c is None else c.name
+
+    def close_settings(self, commit=True):
+        self.M.closeSettings(commit)
+
     def complete_quest(self, quest_id):
         self.M.questsDone[quest_id] = True
 
@@ -3753,7 +4274,7 @@ class WowClient:
 
     def _root(self, root):
         if root is None:
-            root = "WaylaidCrateFrame"
+            root = "GetrichFrame"
         if isinstance(root, str):
             return self.g(root)
         return root
@@ -3794,10 +4315,12 @@ class WowClient:
           return false
         end""")(w))
 
-    def texts(self, root=None, strip=True, clip=False, with_regions=False):
-        """Visible, non-empty FontString texts under root (default WaylaidCrateFrame), top-to-bottom, left-to-right."""
+    def texts(self, root=None, strip=True, clip=False, with_regions=False, editboxes=False):
+        """Visible, non-empty FontString texts under root (default GetrichFrame), top-to-bottom, left-to-right.
+        editboxes=True also returns the text of visible EditBoxes (selectable / copyable text)."""
         out = []
-        for fs in self.regions(root, "FontString"):
+        kinds = ("FontString", "EditBox") if editboxes else ("FontString",)
+        for fs in [w for w in self.regions(root) if w._kind in kinds]:
             t = fs._text
             if t is None or str(t) == "":
                 continue
@@ -3984,13 +4507,13 @@ class WowClient:
 
     def unexpected_globals(self):
         """Globals written by addon code (or named frames/fonts) outside the SPEC's allowed set."""
-        allowed = re.compile(r"^(WaylaidCrateDB|WaylaidCrate\w*|SLASH_WAYLAIDCRATE\d+)$")
+        allowed = re.compile(r"^(GetrichDB|Getrich\w*|SLASH_GETRICH\d+)$")
         bad = {}
         for k, w in self.new_globals().items():
             if not allowed.match(str(k)):
                 bad[k] = w
         for k, w in self.named_frames().items():
-            if w not in ("(mock)",) and not str(k).startswith("WaylaidCrate"):
+            if w not in ("(mock)",) and not str(k).startswith("Getrich"):
                 bad[k] = w
         return bad
 
@@ -4020,14 +4543,14 @@ class WowClient:
 
 if __name__ == "__main__":
     import argparse
-    ap = argparse.ArgumentParser(description="Load WaylaidCrate in the mock client and print a short report")
+    ap = argparse.ArgumentParser(description="Load Getrich in the mock client and print a short report")
     ap.add_argument("--locale", default="enUS")
     ap.add_argument("--sv", default=None)
     args = ap.parse_args()
     c = WowClient(locale=args.locale)
     if args.sv:
         c.load_sv(args.sv)
-    c.load_addon("WaylaidCrate/WaylaidCrate.toc")
+    c.load_addon("Getrich/Getrich.toc")
     c.login()
     c.load_orderbooks()
     c.open_ah()

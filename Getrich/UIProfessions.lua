@@ -1,7 +1,9 @@
 local addonName, WC = ...
 
 -- UIProfessions.lua: a small profit label on the right of each recipe row in Blizzard's profession window
--- (ProfessionsFrame.CraftingPage.RecipeList), with a short breakdown tooltip on the label.
+-- (ProfessionsFrame.CraftingPage.RecipeList), with a short breakdown tooltip on the label, plus skill-up badges
+-- ("Lv1".."Lv3") on the 3 learned recipes with the lowest cost per skill point (WC.Leveling:Candidates).
+-- Settings (registered with Store:Default): profOverlay (all labels on/off), profLevelMark (badges on/off).
 --
 -- Verified in the Forever UI source (wow-ui-source, branch forever, 1.60.1.70450):
 --   Blizzard_Professions is LoadOnDemand (Blizzard_Professions.toc:3); RecipeList is a ProfessionsRecipeListTemplate
@@ -36,7 +38,10 @@ WC.AddLocale({
     PROF_TIP_NEEDS = "Needs: %s",
     PROF_TIP_PARTIAL = "~ some disenchant prices are missing",
     PROF_TIP_EST = "~ some AH prices are from the quick browse (scan Crafting for exact prices)",
-    PROF_TIP_MORE = "Shopping list: /wc craft",
+    PROF_TIP_MORE = "Shopping list: /gr craft",
+    PROF_MARK = "Lv%d",
+    PROF_TIP_LEVEL = "Skill-up pick %d: ~%s per skill point (chance %d%%)",
+    PROF_TIP_LEVEL_GAIN = "Skill-up pick %d: earns ~%s per skill point (chance %d%%)",
   },
   zhCN = {
     PROF_TIP_MATS = "材料",
@@ -54,7 +59,10 @@ WC.AddLocale({
     PROF_TIP_NEEDS = "需要：%s",
     PROF_TIP_PARTIAL = "~ 部分分解材料没有价格",
     PROF_TIP_EST = "~ 部分拍卖价来自快速浏览（扫描“制造”页可得准确价格）",
-    PROF_TIP_MORE = "购物清单：/wc craft",
+    PROF_TIP_MORE = "购物清单：/gr craft",
+    PROF_MARK = "升%d",
+    PROF_TIP_LEVEL = "冲技能第 %d 选：每点技能约 %s（成功率 %d%%）",
+    PROF_TIP_LEVEL_GAIN = "冲技能第 %d 选：每点技能约赚 %s（成功率 %d%%）",
   },
   zhTW = {
     PROF_TIP_MATS = "材料",
@@ -72,9 +80,18 @@ WC.AddLocale({
     PROF_TIP_NEEDS = "需要：%s",
     PROF_TIP_PARTIAL = "~ 部分分解材料沒有價格",
     PROF_TIP_EST = "~ 部分拍賣價來自快速瀏覽（掃描「製造」頁可得準確價格）",
-    PROF_TIP_MORE = "購物清單：/wc craft",
+    PROF_TIP_MORE = "購物清單：/gr craft",
+    PROF_MARK = "升%d",
+    PROF_TIP_LEVEL = "衝技能第 %d 選：每點技能約 %s（成功率 %d%%）",
+    PROF_TIP_LEVEL_GAIN = "衝技能第 %d 選：每點技能約賺 %s（成功率 %d%%）",
   },
 })
+
+-- settings (defaults registered before DB_READY; the Settings page writes them and fires SETTINGS_CHANGED)
+if WC.Store and WC.Store.Default then
+  WC.Store:Default("profOverlay", true)
+  WC.Store:Default("profLevelMark", true)
+end
 
 local Overlay = {}          -- callback owner (must be a table: CallbackRegistry rejects numbers)
 WC.ProfOverlay = Overlay
@@ -82,6 +99,7 @@ local scrollBox             -- ProfessionsFrame.CraftingPage.RecipeList.ScrollBo
 local refreshToken = 0
 
 local GREEN, GREY = "|cff40ff40", "|cff9d9d9d"
+local MARK_COLOR = { orange = "|cffff8040", yellow = "|cffffff00", green = "|cff40c040" }
 
 -- compact money for the label: "1g 5s", "12s 30c", "8c"
 local function Short(copper)
@@ -121,6 +139,41 @@ local function External()
   return WC.Recipes and WC.Recipes.IsExternal and WC.Recipes:IsExternal() or false
 end
 
+local function Setting(key)
+  local db = WC:DB()
+  return type(db) ~= "table" or db[key] ~= false
+end
+
+-- skill-up badges: { [recipeID] = { rank = 1..3, perPoint, chance, color, name } } for the open profession, or nil.
+-- Cached; rebuilt after bus messages (marksDirty) or when another profession is opened.
+local marks, marksDirty, marksProf = nil, true, nil
+local function Marks()
+  local R, LV = WC.Recipes, WC.Leveling
+  if not Setting("profLevelMark") or type(R) ~= "table" or type(LV) ~= "table" or type(LV.Candidates) ~= "function" then
+    return nil
+  end
+  local prof = R.OpenSkillLine and R:OpenSkillLine()
+  if not marksDirty and prof == marksProf then return marks end
+  marksDirty, marksProf, marks = false, prof, nil
+  if not prof then return nil end
+  local rank, max = R:Skill(nil, prof)
+  if type(rank) ~= "number" or type(max) ~= "number" or rank >= max then return nil end   -- maxed: nothing to level
+  local ok, list = pcall(LV.Candidates, LV, WC:CharKey(), prof, rank)
+  if not ok or type(list) ~= "table" then return nil end
+  local m, n = {}, 0
+  for i = 1, #list do
+    local c = list[i]
+    if type(c) == "table" and c.learned and c.recipeID and not m[c.recipeID] and type(c.perPoint) == "number"
+       and type(c.chance) == "number" and c.chance > 0 then
+      n = n + 1
+      m[c.recipeID] = { rank = n, perPoint = c.perPoint, chance = c.chance, color = c.color, name = c.name }
+      if n >= 3 then break end
+    end
+  end
+  if n > 0 then marks = m end
+  return marks
+end
+
 local function ItemName(itemID)
   if WC.ItemName then
     local ok, n = pcall(WC.ItemName, WC, itemID)
@@ -134,10 +187,24 @@ end
 
 local function ShowTip(f)
   local e = f.recipeID and Entry(f.recipeID)
-  if not e then return end
+  if e and type(e.best) ~= "number" and not f.mark then e = nil end
+  local mark = f.mark
+  if not e and not mark then return end
   local tt = GameTooltip
   tt:SetOwner(f, "ANCHOR_RIGHT")
-  tt:AddLine(e.name or (e.itemID and ItemName(e.itemID)) or "?", 1, 1, 1)
+  tt:AddLine((e and (e.name or (e.itemID and ItemName(e.itemID)))) or (mark and mark.name) or "?", 1, 1, 1)
+  if mark then
+    local pct = math.floor(mark.chance * 100 + 0.5)
+    if mark.perPoint < 0 then
+      tt:AddLine(string.format(L.PROF_TIP_LEVEL_GAIN, mark.rank, Short(mark.perPoint), pct), 1, 0.5, 0.25, true)
+    else
+      tt:AddLine(string.format(L.PROF_TIP_LEVEL, mark.rank, Short(mark.perPoint), pct), 1, 0.5, 0.25, true)
+    end
+  end
+  if not e then
+    tt:Show()
+    return
+  end
   if e.yield and e.yield ~= 1 then
     tt:AddLine(string.format(L.PROF_TIP_YIELD, (string.format("%.1f", e.yield):gsub("%.0$", ""))), 0.8, 0.8, 0.8)
   end
@@ -222,17 +289,31 @@ local function UpdateRow(row, node)
   local data = type(node) == "table" and node.GetData and node:GetData()
   local info = type(data) == "table" and data.recipeInfo
   local f = row.wcProfit
-  local e = type(info) == "table" and info.recipeID and not External() and Entry(info.recipeID)
-  if not e or type(e.best) ~= "number" then
-    if f then f.recipeID = nil; f:Hide() end
+  local id = type(info) == "table" and info.recipeID
+  local e, mark
+  if id and Setting("profOverlay") and not External() then
+    e = Entry(id)
+    if e and type(e.best) ~= "number" then e = nil end
+    local m = Marks()
+    mark = m and m[id]
+  end
+  if not e and not mark then
+    if f then f.recipeID, f.mark = nil, nil; f:Hide() end
     return
   end
   f = Label(row)
-  f.recipeID = info.recipeID
-  local best = Round(e.best)          -- |best| < 0.5c shows a grey "0", never "+0c"
-  if best > 0 then f.text:SetText(GREEN .. "+" .. Short(best) .. "|r")
-  elseif best < 0 then f.text:SetText(GREY .. "-" .. Short(best) .. "|r")
-  else f.text:SetText(GREY .. "0|r") end
+  f.recipeID, f.mark = id, mark
+  local text = ""
+  if mark then text = (MARK_COLOR[mark.color] or MARK_COLOR.orange) .. string.format(L.PROF_MARK, mark.rank) .. "|r" end
+  if e then
+    local best = Round(e.best)          -- |best| < 0.5c shows a grey "0", never "+0c"
+    local p
+    if best > 0 then p = GREEN .. "+" .. Short(best) .. "|r"
+    elseif best < 0 then p = GREY .. "-" .. Short(best) .. "|r"
+    else p = GREY .. "0|r" end
+    text = (text ~= "" and (text .. " ") or "") .. p
+  end
+  f.text:SetText(text)
   f:SetWidth(math.max(16, (f.text:GetStringWidth() or 30) + 6))
   f:ClearAllPoints()
   if row.LockedIcon and row.LockedIcon:IsShown() then f:SetPoint("RIGHT", row.LockedIcon, "LEFT", -2, 0)
@@ -259,6 +340,7 @@ end
 
 -- coalesce bursts of bus messages (PRICES_UPDATED can arrive several times a second during a scan)
 local function QueueRefresh()
+  marksDirty = true
   if not scrollBox then return end
   refreshToken = refreshToken + 1
   local token = refreshToken

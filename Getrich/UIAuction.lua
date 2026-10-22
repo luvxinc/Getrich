@@ -38,7 +38,7 @@ local LISTS = {
 AHL.LISTS = LISTS
 
 local function Enabled()
-  local db = WaylaidCrateDB
+  local db = GetrichDB
   return not (db and db.ahTint == false)
 end
 
@@ -108,7 +108,7 @@ end
 
 -- the tint parts of a row frame, created once per frame
 local function Parts(row)
-  local p = row.WaylaidCrateTint
+  local p = row.GetrichTint
   if p then return p end
   p = {}
   p.tex = row:CreateTexture(nil, "OVERLAY", nil, -1)
@@ -122,7 +122,7 @@ local function Parts(row)
   p.label = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
   p.label:SetWordWrap(false)
   p.label:SetTextColor(0.3, 1, 0.42)
-  row.WaylaidCrateTint = p
+  row.GetrichTint = p
   return p
 end
 
@@ -140,7 +140,7 @@ local function Tint(spec, row, elementData)
     end
   end
   if not diff then
-    Hide(row.WaylaidCrateTint)
+    Hide(row.GetrichTint)
     return
   end
   local p = Parts(row)
@@ -208,7 +208,7 @@ function AHL:Hook()
       spec.list = list
       -- new frames: cb(owner, frame, elementData) (ScrollUtil.lua:21-30, ScrollBox.lua:743-745)
       local function OnInit(_, row, elementData) SafeTint(spec, row, elementData) end
-      local function OnRelease(_, row) pcall(Hide, row and row.WaylaidCrateTint) end
+      local function OnRelease(_, row) pcall(Hide, row and row.GetrichTint) end
       if ScrollUtil and ScrollUtil.AddInitializedFrameCallback then
         ScrollUtil.AddInitializedFrameCallback(box, OnInit, spec, false)
       else

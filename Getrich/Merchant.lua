@@ -31,7 +31,7 @@ local myFaction         -- "Alliance" | "Horde" | nil
 
 local function DB()
   if not ready then
-    if type(WaylaidCrateDB) ~= "table" then return nil end
+    if type(GetrichDB) ~= "table" then return nil end
     ready = true
   end
   local db = WC:DB()
