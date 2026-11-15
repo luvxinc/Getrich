@@ -246,7 +246,7 @@ function DE:Value(itemID, ilvl)
   local band, reason = self:Band(itemID, ilvl)
   if not band then return nil, reason end
   local list, measured, casts = self:Expected(band)
-  local keep = 1 - (WC.AH_CUT or 0.05)
+  local keep = 1 - WC:AHCut()
   local parts, missing, total, oldest = {}, {}, 0, nil
   for i = 1, #list do
     local e = list[i]

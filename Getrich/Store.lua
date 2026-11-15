@@ -15,7 +15,13 @@ local addonName, WC = ...
 --                              d = { [dayIndex] = { lo = , avg = , hi = , n = } } } }
 --   watch     = { [itemID] = true },
 --   vendorObs = {}  (Merchant.lua)   recipes = {}, chars = {}  (Recipes.lua)   deSamples = {}  (Disenchant.lua)
+--   crateObs  = { [questID] = { n = turn-ins seen, f = { last Favor gains, at most 5 }, money = copper } }  (Core.lua)
+--   market    = "<realm>|<Alliance / Horde / Neutral>": the Auction House the price tables above belong to
+--   markets   = { [marketKey] = { results, scannedAt, browse, history } }   price tables of the other houses
 -- }
+-- Forever has one Auction House per ruleset and faction, and separate neutral houses. results, scannedAt, browse
+-- and history are prices of ONE house, so they are swapped as a set when another house is used (Store:UseMarket):
+-- every other module keeps reading GetrichDB.results etc. and always sees the house that is in use.
 -- hourIndex = floor(serverTime / 3600), dayIndex = floor(hourIndex / 24) (UTC days).
 -- Hourly records older than historyDays (default 30) are folded into one daily record { lo, avg, hi, n } when the
 -- addon loads or the setting changes (avg = average of that day's hourly cheapest prices, n = hourly records folded in).
@@ -44,7 +50,10 @@ Store.DEFAULTS = {
 local DEFAULTS = Store.DEFAULTS
 
 -- tables every DB has (owners noted in the header)
-local TABLES = { "results", "scannedAt", "history", "watch", "vendorObs", "recipes", "chars", "deSamples" }
+local TABLES = { "results", "scannedAt", "history", "watch", "vendorObs", "recipes", "chars", "deSamples", "crateObs" }
+
+-- the price tables of one Auction House (see the header)
+local MARKET_TABLES = { "results", "scannedAt", "history", "browse" }
 
 -- what WC:DB() returns before the SavedVariables are loaded: defaults + empty tables
 local PRELOAD = setmetatable({ browse = { items = {} } }, { __index = DEFAULTS })
@@ -119,6 +128,50 @@ function Store:Init()
   if WC.Scanner then WC.Scanner.results = db.results end
   self.relevant = nil
   WC:Fire("DB_READY")
+end
+
+-- ---------------------------------------------------------------------------
+-- markets: one set of price tables per Auction House
+
+-- Key of an Auction House for this character: realm name (in Forever the ruleset's realm) + faction, or + "Neutral"
+-- for a neutral house. nil while the game can't say yet.
+function Store:MarketKey(neutral)
+  local realm, faction
+  pcall(function()
+    realm = GetRealmName and GetRealmName()
+    faction = UnitFactionGroup and UnitFactionGroup("player")
+  end)
+  if type(realm) ~= "string" or realm == "" then return nil end
+  if neutral then faction = "Neutral" end
+  if faction ~= "Alliance" and faction ~= "Horde" and faction ~= "Neutral" then return nil end
+  return realm .. "|" .. faction
+end
+
+-- Make `key` the house whose prices are loaded. The first call adopts the prices already there (they were scanned
+-- before houses were told apart). Returns true when the tables were swapped.
+function Store:UseMarket(key)
+  local db = GetrichDB
+  if type(db) ~= "table" or type(key) ~= "string" then return false end
+  if db.market == nil then db.market = key; return false end
+  if db.market == key then return false end
+  if type(db.markets) ~= "table" then db.markets = {} end
+  local park = {}
+  for _, k in ipairs(MARKET_TABLES) do park[k] = db[k] end
+  db.markets[db.market] = park
+  local saved = db.markets[key]
+  db.markets[key] = nil
+  for _, k in ipairs(MARKET_TABLES) do
+    local t = type(saved) == "table" and saved[k] or nil
+    db[k] = type(t) == "table" and t or {}
+  end
+  if type(db.browse.items) ~= "table" then db.browse.items = {} end
+  db.market = key
+  if WC.Scanner then WC.Scanner.results = db.results end
+  self.relevant = nil
+  self:PruneOld()
+  self:Compress()
+  WC:Fire("PRICES_UPDATED")
+  return true
 end
 
 -- Drop search results and browse rows older than pruneDays. Returns results dropped, browse rows dropped.

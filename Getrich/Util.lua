@@ -87,8 +87,14 @@ function WC.BagCount(itemID)
   return (ok and n) or 0
 end
 
--- the Auction House takes 5% of the sale price
+-- The Auction House keeps part of the sale price: 5% at a faction house, 15% at a neutral one. Forever client
+-- table AuctionHouse (build 1.60.1.70938): ConsignmentRate 5 for every Alliance / Horde house, 15 for the
+-- "Blackwater Auction House" rows. WC.neutralAH is set by Core.lua while a neutral house is open.
 WC.AH_CUT = 0.05
+WC.AH_CUT_NEUTRAL = 0.15
+function WC:AHCut()
+  return WC.neutralAH and WC.AH_CUT_NEUTRAL or WC.AH_CUT
+end
 
 -- Errors caught by pcall in event handlers are not thrown away: each distinct one is passed to the
 -- game's error handler once (BugSack / "Display Lua errors") and kept for `/gr errors`.

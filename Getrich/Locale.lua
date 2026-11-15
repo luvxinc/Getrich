@@ -7,19 +7,19 @@ WC.L = L
 
 -- English (default) ----------------------------------------------------------
 L.G, L.S, L.C = "g", "s", "c"
-L.TIER = { "Apprentice", "Journeyman", "Expert" }
+L.TIER = { "Apprentice", "Journeyman", "Expert", "Artisan" }
 L.WRIT_TIER = { [75] = "Journeyman", [125] = "Expert", [200] = "Artisan" }
 L.PROF = { ALC = "Alchemy", BS = "Blacksmithing", ENG = "Engineering", LW = "Leatherworking", TAI = "Tailoring" }
 L.KIND = { crates = "crates", writs = "writs" }
 
 L.TAB_CRATES = "Crates · Merchant's Favor"
 L.TAB_WRITS = "Writs · Reputation"
-L.SUBTITLE_CRATES = "22 crates up to level 30 · cheapest fill picked automatically · priced for the full quantity"
+L.SUBTITLE_CRATES = "All 30 crates, Apprentice to Artisan · cheapest fill picked automatically · priced for the full quantity"
 L.SUBTITLE_WRITS = "150 Craftsman's Writs · writ + requested item from the AH · once a day per writ"
 L.SCAN = "Scan Auction House"
 L.STOP_SCAN = "Stop scan"
 L.RESCAN = "Scan again"
-L.SCAN_TIP_crates = "Scans 22 crates and 69 materials (about 1 minute)."
+L.SCAN_TIP_crates = "Scans 30 crates and 96 materials (about 1.5 minutes)."
 L.SCAN_TIP_writs = "Scans the 150 Craftsman's Writs, then the requested items of the writs for sale (2-4 minutes)."
 L.SCAN_TIP = "The Auction House must be open. Please don't use the Auction House while scanning."
 L.AUTO_SCAN = "Scan the open tab when the Auction House opens"
@@ -140,28 +140,26 @@ L.OPEN_AH_FIRST = "Open the Auction House first."
 L.NO_API = "This client has no C_AuctionHouse search API, so it can't scan."
 L.AH_BTN_TIP = "Open the Getrich window"
 L.SEARCH_FAILED = "Couldn't fill the Auction House search box. Search for \"%s\" by hand."
-L.NOTE_STACK = "Beta bug: may not fill if the amount is above the stack size"
-L.NOTE_GME = "Beta bug: this crate used to refuse Greater Magic Essence"
-L.NOTE_WOOL = "Wowhead says 20 (another source says 40)"
+L.NOTE_STACK = "More than one stack of 20. Blizzard listed this as fixed in the beta, but guides written after launch still say such a bundle can't be placed. If it won't fill, use another bundle."
 
 local locale = GetLocale and GetLocale() or "enUS"
 
 -- 简体中文 --------------------------------------------------------------------
 if locale == "zhCN" then
   L.G, L.S, L.C = "金", "银", "铜"
-  L.TIER = { "学徒", "熟练", "专家" }
+  L.TIER = { "学徒", "熟练", "专家", "工匠" }
   L.WRIT_TIER = { [75] = "熟练", [125] = "专家", [200] = "工匠" }
   L.PROF = { ALC = "炼金", BS = "锻造", ENG = "工程", LW = "制皮", TAI = "裁缝" }
   L.KIND = { crates = "箱子", writs = "Writ" }
 
   L.TAB_CRATES = "箱子 · 商人货币"
   L.TAB_WRITS = "Writ · 声望"
-  L.SUBTITLE_CRATES = "30 级以内 22 种箱子 · 自动选最便宜的填法 · 价格按买够所需数量计算"
+  L.SUBTITLE_CRATES = "全部 30 种箱子（学徒到工匠）· 自动选最便宜的填法 · 价格按买够所需数量计算"
   L.SUBTITLE_WRITS = "150 种 Craftsman's Writ · Writ 和需求物品都从拍卖行买 · 每张每天一次"
   L.SCAN = "扫描拍卖行"
   L.STOP_SCAN = "停止扫描"
   L.RESCAN = "重新扫描"
-  L.SCAN_TIP_crates = "扫描 22 种箱子和 69 种材料（约 1 分钟）。"
+  L.SCAN_TIP_crates = "扫描 30 种箱子和 96 种材料（约 1.5 分钟）。"
   L.SCAN_TIP_writs = "先扫描 150 张 Craftsman's Writ，再扫描在售 Writ 的需求物品（2–4 分钟）。"
   L.SCAN_TIP = "需要打开拍卖行。扫描时请不要操作拍卖行。"
   L.AUTO_SCAN = "打开拍卖行时扫描当前页"
@@ -277,26 +275,24 @@ if locale == "zhCN" then
   L.NO_API = "这个客户端没有 C_AuctionHouse 搜索接口，无法扫描。"
   L.AH_BTN_TIP = "打开 Getrich 窗口"
   L.SEARCH_FAILED = "没能填进拍卖行搜索栏，请手动搜索「%s」。"
-  L.NOTE_STACK = "测试服 Bug：数量超过堆叠上限时可能装不进"
-  L.NOTE_GME = "测试服 Bug：这个箱子曾不收强效魔法精华"
-  L.NOTE_WOOL = "Wowhead 写 20 个（另一来源写 40）"
+  L.NOTE_STACK = "数量超过一组（20 个）。暴雪称测试服已修复，但开服后的攻略仍说这种材料放不进去。装不进就换另一种材料。"
 
 -- 繁體中文 --------------------------------------------------------------------
 elseif locale == "zhTW" then
   L.G, L.S, L.C = "金", "銀", "銅"
-  L.TIER = { "學徒", "熟練", "專家" }
+  L.TIER = { "學徒", "熟練", "專家", "工匠" }
   L.WRIT_TIER = { [75] = "熟練", [125] = "專家", [200] = "工匠" }
   L.PROF = { ALC = "鍊金", BS = "鍛造", ENG = "工程", LW = "製皮", TAI = "裁縫" }
   L.KIND = { crates = "箱子", writs = "Writ" }
 
   L.TAB_CRATES = "箱子 · 商人貨幣"
   L.TAB_WRITS = "Writ · 聲望"
-  L.SUBTITLE_CRATES = "30 級以內 22 種箱子 · 自動選最便宜的填法 · 價格按買夠所需數量計算"
+  L.SUBTITLE_CRATES = "全部 30 種箱子（學徒到工匠）· 自動選最便宜的填法 · 價格按買夠所需數量計算"
   L.SUBTITLE_WRITS = "150 種 Craftsman's Writ · Writ 和需求物品都從拍賣場買 · 每張每天一次"
   L.SCAN = "掃描拍賣場"
   L.STOP_SCAN = "停止掃描"
   L.RESCAN = "重新掃描"
-  L.SCAN_TIP_crates = "掃描 22 種箱子和 69 種材料（約 1 分鐘）。"
+  L.SCAN_TIP_crates = "掃描 30 種箱子和 96 種材料（約 1.5 分鐘）。"
   L.SCAN_TIP_writs = "先掃描 150 張 Craftsman's Writ，再掃描在售 Writ 的需求物品（2–4 分鐘）。"
   L.SCAN_TIP = "需要打開拍賣場。掃描時請不要操作拍賣場。"
   L.AUTO_SCAN = "打開拍賣場時掃描目前頁面"
@@ -412,9 +408,7 @@ elseif locale == "zhTW" then
   L.NO_API = "這個用戶端沒有 C_AuctionHouse 搜尋介面，無法掃描。"
   L.AH_BTN_TIP = "打開 Getrich 視窗"
   L.SEARCH_FAILED = "沒能填進拍賣場搜尋欄，請手動搜尋「%s」。"
-  L.NOTE_STACK = "測試伺服器 Bug：數量超過堆疊上限時可能裝不進"
-  L.NOTE_GME = "測試伺服器 Bug：這個箱子曾不收強效魔法精華"
-  L.NOTE_WOOL = "Wowhead 寫 20 個（另一來源寫 40）"
+  L.NOTE_STACK = "數量超過一組（20 個）。暴雪稱測試伺服器已修復，但開服後的攻略仍說這種材料放不進去。裝不進就換另一種材料。"
 end
 
 -- fallback name when the item isn't in the client cache yet

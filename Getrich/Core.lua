@@ -105,6 +105,80 @@ function WC:WritDoneToday(questID)
   return (ok and done) and true or false
 end
 
+-- ---------------------------------------------------------------------------
+-- crate rewards: built-in values, corrected by what the game really paid
+
+-- the "A Sealed Crate" quest a filled crate is handed in with
+function WC:SealedQuest(crate)
+  local list = WC.SEALED_QUESTS and WC.SEALED_QUESTS[crate.crafted and "green" or "white"]
+  return list and list[crate.tier]
+end
+
+-- Favor, money (copper) and where the Favor number comes from:
+--   "seen"  recorded from the player's own turn-ins (GetrichDB.crateObs)
+--   "data"  the built-in value, confirmed by Wowhead
+--   "guess" the built-in value of a crate nobody has published a reward for yet (crate.unconfirmed)
+-- A recorded Favor replaces a confirmed built-in value only when it is lower or was seen 3 times: a single
+-- turn-in can be a Performance Bonus double, which must not be taken for the base reward.
+function WC:CrateReward(crate)
+  local favor, silver, state = crate.favor, crate.silver, crate.unconfirmed and "guess" or "data"
+  local obs = WC:DB().crateObs
+  local o = type(obs) == "table" and obs[WC:SealedQuest(crate) or 0]
+  if type(o) == "table" then
+    if type(o.money) == "number" and o.money >= 0 then silver = o.money end
+    local seen
+    if type(o.f) == "table" then
+      for _, v in ipairs(o.f) do
+        if type(v) == "number" and v > 0 and (not seen or v < seen) then seen = v end
+      end
+    end
+    if seen and (state == "guess" or seen < favor or (o.n or 0) >= 3) then favor, state = seen, "seen" end
+  end
+  return favor, silver, state, type(o) == "table" and o.n or 0
+end
+
+-- A sealed crate was handed in: remember the Favor and the money it paid. QUEST_TURNED_IN carries the money,
+-- CURRENCY_DISPLAY_UPDATE the Favor gained; the two arrive within a moment of each other, in either order.
+local lastGain, lastTurnIn
+local function MatchCrateReward()
+  if not (lastGain and lastTurnIn) or math.abs(lastGain.t - lastTurnIn.t) > 3 then return end
+  local db = GetrichDB
+  if type(db) == "table" then
+    if type(db.crateObs) ~= "table" then db.crateObs = {} end
+    local o = db.crateObs[lastTurnIn.quest]
+    if type(o) ~= "table" then o = {}; db.crateObs[lastTurnIn.quest] = o end
+    if type(o.f) ~= "table" then o.f = {} end
+    o.n = (tonumber(o.n) or 0) + 1
+    o.f[#o.f + 1] = lastGain.amount
+    while #o.f > 5 do table.remove(o.f, 1) end
+    o.money = lastTurnIn.money
+  end
+  lastGain, lastTurnIn = nil, nil
+end
+
+local sealedQuestSet
+local function IsSealedQuest(questID)
+  if not sealedQuestSet then
+    sealedQuestSet = {}
+    for _, list in pairs(WC.SEALED_QUESTS or {}) do
+      for _, q in ipairs(list) do sealedQuestSet[q] = true end
+    end
+  end
+  return sealedQuestSet[questID] or false
+end
+
+function WC:OnQuestTurnedIn(questID, _, money)
+  if type(questID) ~= "number" or not IsSealedQuest(questID) then return end
+  lastTurnIn = { quest = questID, money = type(money) == "number" and money or 0, t = GetTime() }
+  MatchCrateReward()
+end
+
+function WC:OnCurrencyUpdate(currencyID, _, change)
+  if currencyID ~= WC.FAVOR_CURRENCY or type(change) ~= "number" or change <= 0 then return end
+  lastGain = { amount = change, t = GetTime() }
+  MatchCrateReward()
+end
+
 local function ByScore(a, b)
   if a.score and b.score then
     if a.score ~= b.score then return a.score < b.score end
@@ -128,7 +202,8 @@ function WC:EvaluateCrates()
     local e = { crate = crate, opts = {}, locked = level < crate.lvl, key = crate.id, group = crate.tier }
     local crateCost, crateStatus = WC:CostFor(crate.id, 1)
     e.crateCost, e.crateStatus = crateCost, crateStatus
-    e.favorExp = crate.favor * favorMult
+    e.favor, e.silver, e.rewardState, e.rewardSeen = WC:CrateReward(crate)
+    e.favorExp = e.favor * favorMult
     local anyListed = false
     for j, opt in ipairs(crate.opts) do
       local cost, status, res = WC:CostFor(opt[1], opt[2])
@@ -141,7 +216,7 @@ function WC:EvaluateCrates()
       end
     end
     if e.crateCost and e.matCost then
-      e.net = e.crateCost + e.matCost - crate.silver
+      e.net = e.crateCost + e.matCost - e.silver
       e.perFavor = math.max(e.net, 0) / e.favorExp
       e.status = "ok"
     elseif not crateStatus and not e.matsScanned then
@@ -182,7 +257,7 @@ end
 function WC:BestPerFavor()
   local best, bestAny
   for _, e in ipairs(WC:EvaluateCrates()) do
-    if e.perFavor then
+    if e.perFavor and e.rewardState ~= "guess" then      -- a guessed reward must not price anything else
       if not bestAny or e.perFavor < bestAny then bestAny = e.perFavor end
       if not e.locked and (not best or e.perFavor < best) then best = e.perFavor end
     end
@@ -206,7 +281,9 @@ function WC:EvaluateWrits()
       e.cost = e.writCost + e.itemCost
       e.perRep = e.cost / e.repGain
       e.status = "ok"
-    elseif not e.writStatus and not e.itemStatus then
+    elseif not e.writStatus then
+      -- The writ itself has not been searched yet. Its requested item can already have a price from another scan
+      -- (Unstable Trigger and Truesilver Transformer are crate materials too): that does not make it "not for sale".
       e.status = "unscanned"
     elseif not e.writCost then
       e.status = "nowrit"
@@ -278,23 +355,27 @@ SafeRegister("AUCTION_HOUSE_CLOSED")
 SafeRegister("PLAYER_LEVEL_UP")
 SafeRegister("QUEST_TURNED_IN")
 SafeRegister("UPDATE_FACTION")
+SafeRegister("CURRENCY_DISPLAY_UPDATE")
 
 WC.AddLocale({
   enUS = {
     CORE_AUTO_SKIPPED = "This tab reads the whole Auction House (1-4 minutes), so it doesn't scan automatically. Click \"Scan Auction House\" when you want it.",
     CORE_NO_ERRORS = "No errors recorded.",
+    CORE_NEUTRAL_AH = "Neutral Auction House: its prices are kept apart from your faction's, and sales are costed with the 15% cut.",
     IDLE_LAST_MANUAL = "Last scan %s · prices may have changed · click \"Scan Auction House\" to refresh",
     IDLE_NEVER_MANUAL = "Not scanned yet · click \"Scan Auction House\" (with the Auction House open)",
   },
   zhCN = {
     CORE_AUTO_SKIPPED = "这一页要翻完整个拍卖行（1-4 分钟），不会自动扫描。需要时点『扫描拍卖行』。",
     CORE_NO_ERRORS = "没有记录到错误。",
+    CORE_NEUTRAL_AH = "当前是中立拍卖行：价格和本阵营拍卖行分开记录，卖出手续费按 15% 计算。",
     IDLE_LAST_MANUAL = "上次扫描 %s · 价格可能已经变了 · 点『扫描拍卖行』更新",
     IDLE_NEVER_MANUAL = "还没扫描过 · 打开拍卖行后点『扫描拍卖行』",
   },
   zhTW = {
     CORE_AUTO_SKIPPED = "這一頁要翻完整個拍賣場（1-4 分鐘），不會自動掃描。需要時點『掃描拍賣場』。",
     CORE_NO_ERRORS = "沒有記錄到錯誤。",
+    CORE_NEUTRAL_AH = "目前是中立拍賣場：價格和本陣營拍賣場分開記錄，賣出手續費按 15% 計算。",
     IDLE_LAST_MANUAL = "上次掃描 %s · 價格可能已經變了 · 點『掃描拍賣場』更新",
     IDLE_NEVER_MANUAL = "還沒掃描過 · 打開拍賣場後點『掃描拍賣場』",
   },
@@ -314,6 +395,27 @@ local function WarmItemCache()
   end
 end
 
+-- Is the open Auction House a neutral one? The auctioneer ("npc" while the window is open) then belongs to neither
+-- faction group. Anything unclear counts as the player's own faction house, which is what the addon assumed before.
+local function AtNeutralAuctionHouse()
+  local ok, neutral = pcall(function()
+    if not (UnitExists and UnitExists("npc")) or (UnitIsPlayer and UnitIsPlayer("npc")) then return false end
+    local f = UnitFactionGroup("npc")
+    if issecretvalue and issecretvalue(f) then return false end
+    return f ~= "Alliance" and f ~= "Horde"
+  end)
+  return ok and neutral == true
+end
+
+-- load the price tables of the Auction House in use (Store:UseMarket)
+local function UseMarket(neutral)
+  WC.neutralAH = neutral and true or false
+  local S = WC.Store
+  if not (S and S.UseMarket and S.MarketKey) then return end
+  local ok, err = pcall(function() S:UseMarket(S:MarketKey(neutral)) end)
+  if not ok then ReportError("Store:UseMarket", err) end
+end
+
 frame:SetScript("OnEvent", function(_, event, ...)
   if event == "ADDON_LOADED" then
     local name = ...
@@ -326,10 +428,14 @@ frame:SetScript("OnEvent", function(_, event, ...)
       WC:Fire("DB_READY")
     end
   elseif event == "PLAYER_LOGIN" then
+    UseMarket(false)
     WarmItemCache()
     WC.UI:Create()
   elseif event == "AUCTION_HOUSE_SHOW" then
     WC.ahOpen = true
+    local neutral = AtNeutralAuctionHouse()
+    UseMarket(neutral)
+    if neutral then WC:Print(WC.L.CORE_NEUTRAL_AH) end
     WC.UI:ShowAtAuctionHouse()
     if WC:DB().autoScan then
       C_Timer.After(1.0, function()
@@ -347,8 +453,16 @@ frame:SetScript("OnEvent", function(_, event, ...)
   elseif event == "AUCTION_HOUSE_CLOSED" then
     WC.ahOpen = false
     if WC.Scanner then WC.Scanner:Stop(WC.L.STOP_AH_CLOSED) end
+    if WC.neutralAH then UseMarket(false) end      -- away from the auctioneer, show the faction house again
     WC.UI:OnAuctionHouseClosed()
+  elseif event == "CURRENCY_DISPLAY_UPDATE" then
+    local ok, err = pcall(WC.OnCurrencyUpdate, WC, ...)
+    if not ok then ReportError("crate reward", err) end
   elseif event == "PLAYER_LEVEL_UP" or event == "QUEST_TURNED_IN" or event == "UPDATE_FACTION" then
+    if event == "QUEST_TURNED_IN" then
+      local ok, err = pcall(WC.OnQuestTurnedIn, WC, ...)
+      if not ok then ReportError("crate reward", err) end
+    end
     C_Timer.After(0.5, function() WC.UI:Refresh() end)
   end
 end)

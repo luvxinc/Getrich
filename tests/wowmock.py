@@ -2385,6 +2385,8 @@ MOCK.loggedIn = false
 local function npcWindow()
   if MOCK.merchant and MOCK.merchant.open then return MOCK.merchant end
   if MOCK.trainer and MOCK.trainer.open then return MOCK.trainer end
+  -- the auctioneer, when a test names one: MOCK.auctioneer = { npcID, name, neutral = true|nil }
+  if MOCK.auctioneer and MOCK.AH and MOCK.AH.open then return MOCK.auctioneer end
 end
 MOCK.npcWindow = npcWindow
 function UnitGUID(unit)
@@ -2403,7 +2405,12 @@ function UnitClass(unit) if unit == "player" then return MOCK.player.className, 
 function UnitClassBase(unit) if unit == "player" then return MOCK.player.class, 1 end end
 function UnitRace(unit) if unit == "player" then return MOCK.player.race, MOCK.player.race, 2 end end
 function UnitLevel(unit) if unit == "player" then return MOCK.player.level end; return 0 end
-function UnitFactionGroup(unit) if unit == "player" or unit == "npc" then return MOCK.player.faction, MOCK.player.faction end end
+function UnitFactionGroup(unit)
+  -- a neutral NPC (a goblin auctioneer) belongs to neither faction group: nil
+  if unit == "npc" and npcWindow() and npcWindow().neutral then return nil end
+  if unit == "player" or unit == "npc" then return MOCK.player.faction, MOCK.player.faction end
+end
+function UnitIsPlayer(unit) return unit == "player" end
 function UnitExists(unit) return unit == "player" or (unit == "npc" and npcWindow() ~= nil) end
 function UnitIsUnit(a, b) return a == b end
 function UnitAffectingCombat() return MOCK.inCombat == true end

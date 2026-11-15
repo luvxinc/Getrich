@@ -360,7 +360,7 @@ local function FillEntry(e, recipeID, r, ench, isMe)
     sell = Sell(out)
     local ahUnit, ahTime, ahSource = UnitPrice(out)
     e.ahUnit, e.ahTime, e.ahSource = ahUnit, ahTime, ahSource
-    e.ah = ahUnit and ahUnit * yield * (1 - (WC.AH_CUT or 0.05)) or nil
+    e.ah = ahUnit and ahUnit * yield * (1 - WC:AHCut()) or nil
   else
     e.ahUnit, e.ahTime, e.ahSource, e.ah = nil, nil, nil, nil
   end

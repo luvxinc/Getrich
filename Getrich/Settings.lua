@@ -95,7 +95,7 @@ WC.AddLocale({
     SET_CONTACT = "Contact",
     SET_WEBSITE = "GitHub",
     SET_COPY_HINT = "Click a box, then press Ctrl+C to copy.",
-    SET_CREDITS = "Crate and writ data: Wowhead (WoW Forever beta). Slash commands: /gr, /getrich, /wc.",
+    SET_CREDITS = "Crate and writ data: Wowhead and the WoW Forever client tables. Slash commands: /gr, /getrich, /wc.",
   },
   zhCN = {
     SET_INTRO = "魔兽世界 Forever 挣钱助手。改动立即生效。",
@@ -172,7 +172,7 @@ WC.AddLocale({
     SET_CONTACT = "联系方式",
     SET_WEBSITE = "GitHub",
     SET_COPY_HINT = "点一下文本框，再按 Ctrl+C 复制。",
-    SET_CREDITS = "箱子和 Writ 数据：Wowhead（魔兽世界 Forever 测试服）。命令：/gr、/getrich、/wc。",
+    SET_CREDITS = "箱子和 Writ 数据：Wowhead 和魔兽世界 Forever 客户端数据表。命令：/gr、/getrich、/wc。",
   },
   zhTW = {
     SET_INTRO = "魔獸世界 Forever 賺錢助手。改動立即生效。",
@@ -249,7 +249,7 @@ WC.AddLocale({
     SET_CONTACT = "聯絡方式",
     SET_WEBSITE = "GitHub",
     SET_COPY_HINT = "點一下文字框，再按 Ctrl+C 複製。",
-    SET_CREDITS = "箱子和 Writ 資料：Wowhead（魔獸世界 Forever 測試伺服器）。指令：/gr、/getrich、/wc。",
+    SET_CREDITS = "箱子和 Writ 資料：Wowhead 和魔獸世界 Forever 用戶端資料表。指令：/gr、/getrich、/wc。",
   },
 })
 
@@ -678,6 +678,9 @@ function S:Clear(what)
   if not db then return end
   if what == "history" then
     Wipe(db.history)
+    if type(db.markets) == "table" then      -- the other Auction Houses' history too
+      for _, m in pairs(db.markets) do if type(m) == "table" then m.history = nil end end
+    end
     WC:Fire("PRICES_UPDATED", "clear")
   elseif what == "scans" then
     if WC.Scanner and WC.Scanner.active then WC.Scanner:Stop(L.SET_SCAN_STOPPED) end
@@ -687,6 +690,11 @@ function S:Clear(what)
       db.browse.full, db.browse.gear = nil, nil
     end
     Wipe(db.scannedAt)
+    if type(db.markets) == "table" then      -- the other Auction Houses' scans too
+      for _, m in pairs(db.markets) do
+        if type(m) == "table" then m.results, m.browse, m.scannedAt = nil, nil, nil end
+      end
+    end
     WC:Fire("PRICES_UPDATED", "clear")
   elseif what == "de" then
     Wipe(db.deSamples)                     -- emptied in place: Disenchant.lua keeps a reference to it

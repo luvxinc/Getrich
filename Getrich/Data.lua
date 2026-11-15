@@ -79,15 +79,52 @@ WC.ITEMS = {
   [10559] = { "Mithril Tube", "秘银管" },
   [10560] = { "Unstable Trigger", "不稳定的触发器" },
   [10561] = { "Mithril Casing", "秘银外壳" },
+  -- Artisan crates (level 35)
+  [13464] = { "Golden Sansam", "黄金参" },
+  [8838]  = { "Sungrass", "太阳草" },
+  [8839]  = { "Blindweed", "盲目草" },
+  [8845]  = { "Ghost Mushroom", "幽灵菇" },
+  [8846]  = { "Gromsblood", "格罗姆之血" },
+  [13463] = { "Dreamfoil", "梦叶草" },
+  [13465] = { "Mountain Silversage", "山鼠草" },
+  [13466] = { "Plaguebloom", "瘟疫花" },
+  [13467] = { "Icecap", "冰盖草" },
+  [7911]  = { "Truesilver Ore", "真银矿石" },
+  [10620] = { "Thorium Ore", "瑟银矿石" },
+  [11370] = { "Dark Iron Ore", "黑铁矿石" },
+  [14047] = { "Runecloth", "符文布" },
+  [4304]  = { "Thick Leather", "厚皮" },
+  [8170]  = { "Rugged Leather", "硬甲皮" },
+  [11176] = { "Dream Dust", "梦境之尘" },
+  [11175] = { "Greater Nether Essence", "强效虚空精华" },
+  [14343] = { "Small Brilliant Shard", "小块魔光碎片" },
+  [14344] = { "Large Brilliant Shard", "大块魔光碎片" },
+  [14048] = { "Bolt of Runecloth", "符文布卷" },
+  [8172]  = { "Cured Thick Hide", "熟化厚毛皮" },
+  [11371] = { "Dark Iron Bar", "黑铁锭" },
+  [6037]  = { "Truesilver Bar", "真银锭" },
+  [12359] = { "Thorium Bar", "瑟银锭" },
+  [15994] = { "Thorium Widget", "瑟银零件" },
+  [18631] = { "Truesilver Transformer", "真银变压器" },
+  [16000] = { "Thorium Tube", "瑟银管" },
 }
 
 local L = WC.L
-WC.NOTES = { stack = L.NOTE_STACK, gme = L.NOTE_GME, wool = L.NOTE_WOOL }
+-- stack: the bundle is more than one stack (ItemSparse.Stackable is 20 for all five such materials)
+WC.NOTES = { stack = L.NOTE_STACK }
 
--- Waylaid Crates usable at level 30 or below (Apprentice / Journeyman / Expert).
--- favor  = Merchant's Favor on turn-in (beta data, wow-professions.com)
--- silver = money reward on turn-in, in copper
--- opts   = fill with ONE of these bundles: { itemID, quantity, noteKey }
+-- The 30 labelled Waylaid Crates of the live game (level cap 60): Apprentice / Journeyman (level 10), Expert (20),
+-- Artisan (35). Checked on 2026-11-15 against the live client, build 1.60.1.70938 (tools/verify_game_data.py):
+--   opts   = fill with ONE of these bundles: { itemID, quantity, noteKey }. Bundles and their order are the item's own
+--            tooltip ("Fill the crate with any bundle from the following list"), quantities also the client's
+--            SpellEffect rows of each crate's "Stock Crate" spell; lvl = ItemSparse.RequiredLevel.
+--   favor  = Merchant's Favor for the sealed crate. Wowhead quest "A Sealed Crate": 5 / 10 / 15 (white, raw
+--            materials: quests 91899-91901), 10 / 20 / 30 (green, crafted goods: quests 91904-91906).
+--            Artisan (quests 91902 / 91907): no source has the reward yet (Wowhead has none, the guides say
+--            "unconfirmed"), so 20 / 40 continues the pattern and is marked unconfirmed = true. Core.lua records the
+--            real reward the first time such a crate is turned in (GetrichDB.crateObs) and uses that from then on.
+--   silver = money on turn-in, in copper: 50 copper per Favor in the beta guides (wow-professions.com and others).
+--            Wowhead lists no money for these quests, so this too is replaced by what the game really pays.
 WC.CRATES = {
   { id = 248684, en = "Apprentice Textiles",    cn = "学徒·纺织",       tier = 1, lvl = 10, crafted = false, favor = 5,  silver = 250,
     opts = { { 2589, 40, "stack" }, { 2318, 20 } } },
@@ -96,7 +133,7 @@ WC.CRATES = {
   { id = 248682, en = "Apprentice Herbs",       cn = "学徒·草药",       tier = 1, lvl = 10, crafted = false, favor = 5,  silver = 250,
     opts = { { 2447, 20 }, { 765, 20 }, { 2449, 10 }, { 785, 10 }, { 2450, 10 } } },
   { id = 248685, en = "Apprentice Curiosities", cn = "学徒·奇物",       tier = 1, lvl = 10, crafted = false, favor = 5,  silver = 250,
-    opts = { { 10940, 20 }, { 10939, 4, "gme" }, { 10978, 6 }, { 11084, 2 } } },
+    opts = { { 10940, 20 }, { 10939, 4 }, { 10978, 6 }, { 11084, 2 } } },
   { id = 248702, en = "Apprentice Fabrics",     cn = "学徒·布皮成品",   tier = 1, lvl = 10, crafted = true,  favor = 10, silver = 500,
     opts = { { 4231, 2 }, { 2996, 20 } } },
   { id = 248703, en = "Apprentice Ingots",      cn = "学徒·金属锭",     tier = 1, lvl = 10, crafted = true,  favor = 10, silver = 500,
@@ -105,7 +142,7 @@ WC.CRATES = {
     opts = { { 4359, 16 }, { 4361, 16 }, { 4363, 4 } } },
 
   { id = 248688, en = "Journeyman Textiles",    cn = "熟练·纺织",       tier = 2, lvl = 10, crafted = false, favor = 10, silver = 500,
-    opts = { { 2592, 20, "wool" }, { 4306, 40, "stack" }, { 2319, 20 } } },
+    opts = { { 2592, 20 }, { 4306, 40, "stack" }, { 2319, 20 } } },
   { id = 248687, en = "Journeyman Ore",         cn = "熟练·矿石",       tier = 2, lvl = 10, crafted = false, favor = 10, silver = 500,
     opts = { { 2775, 10 }, { 2772, 20 } } },
   { id = 248686, en = "Journeyman Herbs",       cn = "熟练·草药",       tier = 2, lvl = 10, crafted = false, favor = 10, silver = 500,
@@ -117,7 +154,7 @@ WC.CRATES = {
   { id = 248706, en = "Journeyman Ingots",      cn = "熟练·金属锭",     tier = 2, lvl = 10, crafted = true,  favor = 20, silver = 1000,
     opts = { { 2842, 10 }, { 3575, 20 } } },
   { id = 248707, en = "Journeyman Parts",       cn = "熟练·工程零件",   tier = 2, lvl = 10, crafted = true,  favor = 20, silver = 1000,
-    opts = { { 4371, 8 }, { 4375, 7 }, { 4382, 4 }, { 10558, 45 } } },
+    opts = { { 4371, 8 }, { 4375, 7 }, { 4382, 4 }, { 10558, 45, "stack" } } },
 
   { id = 248693, en = "Expert Textiles",        cn = "专家·纺织",       tier = 3, lvl = 20, crafted = false, favor = 15, silver = 750,
     opts = { { 4338, 40, "stack" }, { 4234, 20 } } },
@@ -135,7 +172,32 @@ WC.CRATES = {
     opts = { { 3860, 20 }, { 3859, 15 }, { 3577, 10 } } },
   { id = 248710, en = "Expert Parts",           cn = "专家·工程零件",   tier = 3, lvl = 20, crafted = true,  favor = 30, silver = 1500,
     opts = { { 4387, 8 }, { 10559, 5 }, { 10560, 12 }, { 10561, 5 } } },
+
+  { id = 248698, en = "Artisan Textiles",        cn = "工匠·纺织",       tier = 4, lvl = 35, crafted = false, favor = 20, silver = 1000, unconfirmed = true,
+    opts = { { 14047, 40, "stack" }, { 4304, 20 }, { 8170, 20 } } },
+  { id = 248697, en = "Artisan Ore",             cn = "工匠·矿石",       tier = 4, lvl = 35, crafted = false, favor = 20, silver = 1000, unconfirmed = true,
+    opts = { { 7911, 10 }, { 10620, 20 }, { 11370, 20 } } },
+  { id = 248695, en = "Earthly Artisan Herbs",   cn = "工匠·草药（大地）", tier = 4, lvl = 35, crafted = false, favor = 20, silver = 1000, unconfirmed = true,
+    opts = { { 13464, 10 }, { 8838, 20 }, { 8839, 10 }, { 8845, 10 }, { 8846, 10 } } },
+  { id = 248696, en = "Flowering Artisan Herbs", cn = "工匠·草药（花卉）", tier = 4, lvl = 35, crafted = false, favor = 20, silver = 1000, unconfirmed = true,
+    opts = { { 13463, 20 }, { 13465, 20 }, { 13466, 20 }, { 13467, 20 } } },
+  { id = 248699, en = "Artisan Curiosities",     cn = "工匠·奇物",       tier = 4, lvl = 35, crafted = false, favor = 20, silver = 1000, unconfirmed = true,
+    opts = { { 11176, 20 }, { 11175, 4 }, { 14343, 6 }, { 14344, 2 } } },
+  { id = 248711, en = "Artisan Fabrics",         cn = "工匠·布皮成品",   tier = 4, lvl = 35, crafted = true,  favor = 40, silver = 2000, unconfirmed = true,
+    opts = { { 14048, 8 }, { 8172, 2 } } },
+  { id = 248712, en = "Artisan Ingots",          cn = "工匠·金属锭",     tier = 4, lvl = 35, crafted = true,  favor = 40, silver = 2000, unconfirmed = true,
+    opts = { { 11371, 2 }, { 6037, 10 }, { 12359, 20 } } },
+  { id = 248713, en = "Artisan Parts",           cn = "工匠·工程零件",   tier = 4, lvl = 35, crafted = true,  favor = 40, silver = 2000, unconfirmed = true,
+    opts = { { 15994, 5 }, { 18631, 5 }, { 16000, 2 } } },
 }
+
+-- "A Sealed Crate" turn-in quest of each sealed crate, by quality and tier (Wowhead, WoW Forever, 2026-11-15).
+-- Quests 91903 / 91908 would be the Elite tier: the client has Sealed Elite Crates but no Elite Waylaid Crate yet.
+WC.SEALED_QUESTS = {
+  white = { 91899, 91900, 91901, 91902 },   -- raw materials
+  green = { 91904, 91905, 91906, 91907 },   -- crafted goods
+}
+WC.FAVOR_CURRENCY = 3402                     -- Merchant's Favor (client table CurrencyTypes)
 
 WC.TIER_NAME = L.TIER
 
@@ -144,13 +206,16 @@ for _, c in ipairs(WC.CRATES) do
   WC.ITEMS[c.id] = WC.ITEMS[c.id] or { "Waylaid Crate: " .. c.en, c.cn }
 end
 
--- Reputation (Durotar Supply and Logistics / Azeroth Commerce Authority), WoW Forever beta:
---   filled crate turn-in ............ 0 reputation (only Merchant's Favor)
---   empty crate + Forged Delivery Receipt (bought for 15 Favor, needs Friendly) ... +50 reputation
---   first crate ever (Shipping Label quest, one time) ... 2000 reputation + 50 Favor
--- Bonuses: Legacy "Diplomat" +2/4/6/8/10% reputation; Legacy "Performance Bonus" 5/10/15% chance
--- of +100% Favor per crate. Human "Diplomacy" (+10%) is not in Forever's racial list, but the
--- addon still checks the spell in case it comes back.
+-- Reputation (Durotar Supply and Logistics / Azeroth Commerce Authority). Checked on Wowhead (WoW Forever) on
+-- 2026-11-15; the faction page lists exactly these reputation sources: the 150 writs, Crate Return, Shipping Label.
+--   filled crate turn-in ("A Sealed Crate") ... 0 reputation, only Merchant's Favor
+--   empty crate + Forged Delivery Receipt (item 262902, 15 Favor from the Uncertified Scribe) = quest 93862
+--     "Crate Return" ... +50 reputation. The guides say the scribe needs Friendly; Wowhead shows no requirement.
+--   first crate ever (quest "Shipping Label" 98247 / 98248, one time) ... 2000 reputation + 50 Favor
+-- Bonuses (client spell data, build 1.60.1.70938): Legacy "Diplomat" +2% reputation per rank, 10% at rank 5 (spell
+-- 1225485); Legacy "Performance Bonus" 5 / 10 / 15% chance of +100% Favor per crate (spell 1225456).
+-- Human "Diplomacy" (+10%, spell 20599) is not in the Forever client, but the addon still checks the spell in case
+-- it comes back.
 WC.REP = {
   fill = 0,
   empty = 50,

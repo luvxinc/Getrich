@@ -3,6 +3,21 @@ local addonName, WC = ...
 -- Crates tab: cost per Merchant's Favor.
 local UI = WC.UI
 local L = WC.L
+
+WC.AddLocale({
+  enUS = {
+    TT_REWARD_GUESS = "Reward not confirmed: no source has published what an Artisan crate pays, so this continues the pattern of the lower tiers. The addon records the real reward the first time you turn one in.",
+    TT_REWARD_SEEN = "Reward as recorded from your own turn-ins (%d).",
+  },
+  zhCN = {
+    TT_REWARD_GUESS = "奖励未确认：目前没有任何来源公布 Artisan 箱子的奖励，这里按低等级箱子的规律估算。你交过一次后，插件会记下实际奖励并改用它。",
+    TT_REWARD_SEEN = "奖励为你实际交箱记录到的数值（%d 次）。",
+  },
+  zhTW = {
+    TT_REWARD_GUESS = "獎勵未確認：目前沒有任何來源公布 Artisan 箱子的獎勵，這裡按低等級箱子的規律估算。你交過一次後，插件會記下實際獎勵並改用它。",
+    TT_REWARD_SEEN = "獎勵為你實際交箱記錄到的數值（%d 次）。",
+  },
+})
 local Money, Num, Pct, Font = WC.Money, UI.Num, UI.Pct, UI.Font
 local C_GREEN, C_ORANGE, C_GREY, C_UNCOMMON = UI.C_GREEN, UI.C_ORANGE, UI.C_GREY, UI.C_UNCOMMON
 
@@ -93,7 +108,7 @@ function Tab:FillRow(row, e, isTop)
   row:SetAlpha(e.locked and 0.5 or 1)
   row.name:SetText(CrateName(c))
   local lvlText = e.locked and ("|cffff5a4a" .. L.NEED_LEVEL_FMT:format(c.lvl) .. "|r") or L.LEVEL_FMT:format(c.lvl)
-  row.sub:SetText(WC.TIER_NAME[c.tier] .. " · " .. lvlText .. " · " .. L.FAVOR_FMT:format(Num(e.favorExp)))
+  row.sub:SetText(WC.TIER_NAME[c.tier] .. " · " .. lvlText .. " · " .. L.FAVOR_FMT:format(Num(e.favorExp) .. (e.rewardState == "guess" and "?" or "")))
   row.price:SetText(e.crateCost and Money(e.crateCost) or (e.crateStatus and (C_ORANGE .. L.NO_STOCK .. "|r") or Money(nil)))
   row.hotB:SetShown(e.bestIdx ~= nil)
   local stocked = 0
@@ -132,9 +147,9 @@ function Tab:Refresh()
   b.perLabel:SetText(L.PER_FAVOR_COST)
   b.name:SetText(CrateName(c) .. "  " .. C_GREY .. WC.TIER_NAME[c.tier] .. " · " .. L.LEVEL_FMT:format(c.lvl) .. "|r")
   local o = top.opts[top.bestIdx]
-  b.detail:SetText(L.BEST_DETAIL:format(Money(top.crateCost), C_GREEN .. o.qty .. " × " .. WC:ItemName(o.itemID) .. "|r", Money(top.matCost), Money(c.silver)))
+  b.detail:SetText(L.BEST_DETAIL:format(Money(top.crateCost), C_GREEN .. o.qty .. " × " .. WC:ItemName(o.itemID) .. "|r", Money(top.matCost), Money(top.silver)))
   b.per:SetText(Money(top.perFavor))
-  b.net:SetText(L.BEST_NET:format(Money(top.net), Num(top.favorExp)))
+  b.net:SetText(L.BEST_NET:format(Money(top.net), Num(top.favorExp) .. (top.rewardState == "guess" and "?" or "")))
 end
 
 function Tab:BestMessage()
@@ -149,7 +164,12 @@ function Tab:ShowTooltip(owner, e, kind)
   GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
   GameTooltip:AddLine(CrateName(c))
   GameTooltip:AddLine(WC.TIER_NAME[c.tier] .. " · " .. L.NEED_LEVEL_FMT:format(c.lvl), 0.7, 0.7, 0.7)
-  GameTooltip:AddDoubleLine(L.TT_REWARD, L.TT_REWARD_VAL:format(c.favor, Money(c.silver)), 1, 0.82, 0, 1, 1, 1)
+  GameTooltip:AddDoubleLine(L.TT_REWARD, L.TT_REWARD_VAL:format(e.favor, Money(e.silver)), 1, 0.82, 0, 1, 1, 1)
+  if e.rewardState == "guess" then
+    GameTooltip:AddLine(L.TT_REWARD_GUESS, 1, 0.55, 0.2, true)
+  elseif e.rewardState == "seen" then
+    GameTooltip:AddLine(L.TT_REWARD_SEEN:format(e.rewardSeen or 0), 0.6, 0.6, 0.6, true)
+  end
   GameTooltip:AddDoubleLine(L.TT_BONUS_FAVOR, Num(e.favorExp) .. (favorBonus > 0 and (C_GREEN .. " (+" .. Pct(favorBonus) .. ")|r") or ""), 1, 0.82, 0, 1, 1, 1)
   GameTooltip:AddDoubleLine(L.TT_REP_FILL, "0", 1, 0.82, 0, 1, 1, 1)
   local crateRight

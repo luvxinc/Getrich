@@ -1,10 +1,14 @@
 local addonName, WC = ...
 
--- Craftsman's Writs (WoW Forever beta). Every row verified on Wowhead quest pages, 2026-10-14.
+-- Craftsman's Writs. Every row was verified on Wowhead quest pages on 2026-10-14 (beta) and again against the live
+-- game on 2026-11-15: quest IDs, reputation (75 Journeyman / 125 Expert / 200 Artisan, no money, no Favor) and names
+-- for all 150 on Wowhead's quest list; requested item and quantity on each quest's tooltip; item IDs and names in
+-- the client's ItemSparse, build 1.60.1.70938 (tools/verify_game_data.py).
 -- Turn in the writ item + the requested item to the customer marked on the map for reputation
 -- with your trade faction (Durotar Supply and Logistics / Azeroth Commerce Authority).
 -- Each writ can be done once a day.
--- { writ item ID, quest ID, requested item ID, quantity, reputation, profession, English name }
+-- { writ item ID, quest ID, requested item ID, quantity, reputation, profession, English name of the requested item,
+--   name on the writ if Blizzard spelled it differently there }
 WC.WRITS = {
   { 264124, 94324, 246948, 1, 200, "ALC", "Distilled Firewater" },
   { 264119, 94319, 9233, 1, 200, "ALC", "Draught of Detect Demon" },
@@ -14,7 +18,7 @@ WC.WRITS = {
   { 264118, 94318, 13457, 1, 200, "ALC", "Greater Fire Protection Potion" },
   { 264122, 94322, 3387, 1, 200, "ALC", "Limited Invulnerability Potion" },
   { 264123, 94323, 18253, 1, 200, "ALC", "Major Rejuvenation Potion" },
-  { 264116, 94316, 9224, 1, 200, "ALC", "Potion of Demon Slaying" },
+  { 264116, 94316, 9224, 1, 200, "ALC", "Potion of Demon Slaying", "Potion of Demonslaying" },
   { 264060, 94260, 10592, 1, 125, "ALC", "Catseye Draught" },
   { 264066, 94266, 8949, 1, 125, "ALC", "Elixir of Agility" },
   { 264063, 94263, 6049, 1, 125, "ALC", "Fire Protection Potion" },
@@ -30,7 +34,7 @@ WC.WRITS = {
   { 264019, 94219, 5996, 1, 75, "ALC", "Draught of Water Breathing" },
   { 264018, 94218, 8951, 1, 75, "ALC", "Elixir of Defense" },
   { 264016, 94216, 3390, 1, 75, "ALC", "Elixir of Lesser Agility" },
-  { 264011, 94004, 3391, 1, 75, "ALC", "Elixir of Ogre Strength" },
+  { 264011, 94004, 3391, 1, 75, "ALC", "Elixir of Ogre Strength", "Elixir of Ogre's Strength" },
   { 264012, 94212, 3383, 1, 75, "ALC", "Elixir of Wisdom" },
   { 264015, 94215, 5634, 1, 75, "ALC", "Free Action Potion" },
   { 264013, 94213, 3385, 1, 75, "ALC", "Lesser Mana Potion" },
@@ -63,7 +67,7 @@ WC.WRITS = {
   { 264026, 94226, 3485, 1, 75, "BS", "Green Iron Gauntlets" },
   { 264024, 94224, 3491, 1, 75, "BS", "Heavy Bronze Mace" },
   { 264022, 94222, 5541, 1, 75, "BS", "Iridescent Hammer" },
-  { 264020, 94220, 5540, 1, 75, "BS", "Pearl-handled Dagger" },
+  { 264020, 94220, 5540, 1, 75, "BS", "Pearl-handled Dagger", "Pearl-Handled Dagger" },
   { 264025, 94225, 2865, 1, 75, "BS", "Rough Bronze Leggings" },
   { 264023, 94223, 15869, 1, 75, "BS", "Silver Skeleton Key" },
   { 264139, 94339, 18232, 1, 200, "ENG", "Field Repair Bot 74A" },
@@ -82,7 +86,7 @@ WC.WRITS = {
   { 264087, 94287, 10500, 1, 125, "ENG", "Fire Goggles" },
   { 264086, 94286, 4852, 1, 125, "ENG", "Flash Bomb" },
   { 264083, 94283, 4395, 1, 125, "ENG", "Goblin Land Mine" },
-  { 264089, 94289, 10498, 1, 125, "ENG", "Gyromatic Micro-Adjustor" },
+  { 264089, 94289, 10498, 1, 125, "ENG", "Gyromatic Micro-Adjustor", "Gyromatic Micro-Adjuster" },
   { 264080, 94280, 4396, 1, 125, "ENG", "Mechanical Dragonling" },
   { 264090, 94290, 11590, 1, 125, "ENG", "Mechanical Repair Kit" },
   { 264088, 94288, 10514, 1, 125, "ENG", "Mithril Frag Bomb" },
@@ -160,11 +164,11 @@ WC.WRITS = {
 
 -- unpack rows into named fields
 for i, w in ipairs(WC.WRITS) do
-  WC.WRITS[i] = { writ = w[1], quest = w[2], item = w[3], qty = w[4], rep = w[5], prof = w[6], en = w[7] }
+  WC.WRITS[i] = { writ = w[1], quest = w[2], item = w[3], qty = w[4], rep = w[5], prof = w[6], en = w[7], writName = w[8] or w[7] }
 end
 
 -- fallback names (until the client has the item cached), used for searches and the progress bar
 for _, w in ipairs(WC.WRITS) do
-  WC.ITEMS[w.writ] = WC.ITEMS[w.writ] or { "Craftsman's Writ: " .. w.en, "Craftsman's Writ: " .. w.en }
+  WC.ITEMS[w.writ] = WC.ITEMS[w.writ] or { "Craftsman's Writ: " .. w.writName, "Craftsman's Writ: " .. w.writName }
   WC.ITEMS[w.item] = WC.ITEMS[w.item] or { w.en, w.en }
 end

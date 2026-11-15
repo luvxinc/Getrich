@@ -308,7 +308,7 @@ def s_load(ctx):
 
 
 # ------------------------------------------------------------------------------------------------------------------
-@scenario("crates_writs_130", "1.3.0 crates/writs session: evaluations identical to v1.3.0 (eval_130.json) + 1.3.0 UI checks")
+@scenario("crates_writs_130", "1.3.0 crates/writs session: the 22 crates and 150 writs of v1.3.0 evaluate as they did then (eval_130.json) + 1.3.0 UI checks")
 def s_130(ctx):
     c = ctx.client(locale="enUS")
     got = run_market_130(c, ctx)
@@ -316,10 +316,24 @@ def s_130(ctx):
     for step in ("after_crates", "after_writs", "after_writs_all"):
         for part in ("crates", "writs"):
             a, b = got[step][part], ref[step][part]
-            ctx.eq(len(a), len(b), "%s %s count" % (step, part))
-            for x, y in zip(a, b):
-                if x != y:
-                    diff = {k: (x.get(k), y.get(k)) for k in set(x) | set(y) if x.get(k) != y.get(k)}
+            # 2026.11.0 added the 8 Artisan crates (level 35): everything 1.3.0 had must still be there, by id
+            new = {x.get("id"): x for x in a}
+            ctx.eq(len(a), len(b) + (8 if part == "crates" else 0), "%s %s count" % (step, part))
+            for y in b:
+                x = new.get(y.get("id"))
+                if x is None:
+                    ctx.failures.append("%s %s id %s of 1.3.0 is gone" % (step, part, y.get("id")))
+                    break
+                diff = {k: (x.get(k), y.get(k)) for k in set(x) | set(y) if x.get(k) != y.get(k)}
+                if part == "writs":
+                    # 2026.11.0, on purpose: a writ that was never searched is "unscanned" even when its requested
+                    # item already has a price from the crate scan (1.3.0 called that "nowrit"); and Truesilver
+                    # Transformer (writ 264140) is now a crate material, so the crate scan prices it.
+                    if diff.get("status") == ("unscanned", "nowrit") and x.get("writCost") is None:
+                        del diff["status"]
+                    if y.get("id") == 264140 and diff.get("itemCost", (None, 0))[1] is None:
+                        del diff["itemCost"]
+                if diff:
                     ctx.failures.append("%s %s id %s differs from 1.3.0 (new, 1.3.0): %s" % (step, part, y.get("id"), diff))
                     break
     WC = c.WC
@@ -2529,6 +2543,150 @@ def s_craft_lazy(ctx):
     by_ui = [(int(d.sl), str(d.tb)) for d in lua_list(c.M.decodes) if "UICraft.lua" in str(d.tb) and "Profit.lua" not in str(d.tb)]
     ctx.check(not by_ui, "the Crafting tab (profit mode) decoded recipe lines itself: %s\n%s" % ([x[0] for x in by_ui], by_ui[0][1] if by_ui else ""))
     check_clean(ctx, c)
+
+
+# ===================================================================================================================
+# 2026.11.0: live game (level cap 60, one Auction House per ruleset and faction)
+# ===================================================================================================================
+@scenario("artisan_crates", "2026.11.0: 30 crates incl. 8 Artisan (level 35); their Favor is a guess until a turn-in is recorded; guesses never price the receipt")
+def s_artisan(ctx):
+    c = ctx.client()
+    WC = c.WC
+    crates = lua_list(WC.CRATES)
+    ctx.eq(len(crates), 30, "crates")
+    art = [x for x in crates if x.tier == 4]
+    ctx.eq(len(art), 8, "Artisan crates")
+    ctx.check(all(x.lvl == 35 and x.unconfirmed for x in art), "Artisan crates: level 35, unconfirmed")
+    ctx.eq(sorted(x.favor for x in art), [20] * 5 + [40] * 3, "Artisan Favor placeholders (white 20, green 40)")
+    ctx.eq(str(WC.TIER_NAME[4]), "Artisan" if c.locale == "enUS" else "工匠", "tier 4 name")
+    # only Artisan Ore is for sale and fillable: it ranks, but as a guess, and BestPerFavor ignores it
+    c.set_listings(248697, [(1000, 3)])
+    c.set_listings(10620, [(10, 500)])
+    c.open_ah()
+    start_scan(c, "crates", 900)
+    ev = {int(e.crate.id): e for e in lua_list(c.eval("local WC = ...; return WC:EvaluateCrates()", WC))}
+    e = ev[248697]
+    ctx.eq(str(e.status), "ok", "Artisan Ore status")
+    ctx.eq(str(e.rewardState), "guess", "Artisan Ore reward state")
+    ctx.eq(fnum(e.perFavor), (1000 + 200 - 1000) / 20.0, "Artisan Ore cost per Favor with the placeholder (crate 1000 + 20 x 10 - 10 s) / 20")
+    ctx.check(ev[248697].locked, "a level 25 character can't open a level 35 crate")
+    ctx.check(c.eval("local WC = ...; return WC:BestPerFavor()", WC) is None, "a guessed reward must not become the Favor price used for the receipt")
+    c.slash("/gr crates")
+    ctx.check(any("20?" in t for t in c.texts()), "the crate row should mark a guessed reward with '?': %s" % [t for t in c.texts() if "Favor" in t][:6])
+    # the first real turn-in: quest 91902 (white Artisan) pays 25 Favor and 12 s 50 c
+    c.fire("CURRENCY_DISPLAY_UPDATE", 3402, 125, 25, 0, 0)
+    c.fire("QUEST_TURNED_IN", 91902, 0, 1250)
+    c.advance(1)
+    e = [x for x in lua_list(c.eval("local WC = ...; return WC:EvaluateCrates()", WC)) if x.crate.id == 248697][0]
+    ctx.eq((str(e.rewardState), fnum(e.favor), fnum(e.silver)), ("seen", 25, 1250), "after the turn-in: recorded Favor and money")
+    ctx.eq(fnum(e.perFavor), 0, "net cost 1000 + 200 - 1250 < 0 -> 0 per Favor")
+    check_clean(ctx, c)
+
+
+@scenario("crate_reward_records", "2026.11.0: recorded turn-ins: money always; Favor of a confirmed crate only when lower or seen 3 times (a Performance Bonus double is not the base)")
+def s_reward_records(ctx):
+    c = ctx.client()
+    WC = c.WC
+    reward = lambda cid: tuple(multi(c.eval("local WC, id = ...; for _, x in ipairs(WC.CRATES) do if x.id == id then return WC:CrateReward(x) end end", WC, cid), 4))
+    ctx.eq(reward(248683)[:3], (5, 250, "data"), "Apprentice Ore, built-in")
+    # one turn-in that the Performance Bonus doubled (10 Favor), paying 3 s
+    c.fire("QUEST_TURNED_IN", 91899, 0, 300)
+    c.fire("CURRENCY_DISPLAY_UPDATE", 3402, 10, 10, 0, 0)
+    ctx.eq(reward(248683)[:3], (5, 300, "data"), "one doubled turn-in: Favor stays 5, money is what the game paid")
+    # unrelated: another currency, a Favor loss, another quest, a gain long after the turn-in
+    c.fire("CURRENCY_DISPLAY_UPDATE", 1, 50, 50, 0, 0)
+    c.fire("CURRENCY_DISPLAY_UPDATE", 3402, 0, -15, 0, 0)
+    c.fire("QUEST_TURNED_IN", 94219, 0, 0)
+    c.fire("QUEST_TURNED_IN", 91899, 0, 300)
+    c.advance(10)
+    c.fire("CURRENCY_DISPLAY_UPDATE", 3402, 60, 50, 0, 0)
+    ctx.eq(int(c.g("GetrichDB").crateObs[91899].n), 1, "only the matched turn-in is recorded")
+    # two normal turn-ins: three seen, the smallest (5) is the base
+    for _ in range(2):
+        c.fire("CURRENCY_DISPLAY_UPDATE", 3402, 5, 5, 0, 0)
+        c.fire("QUEST_TURNED_IN", 91899, 0, 300)
+        c.advance(5)
+    ctx.eq(reward(248683), (5, 300, "seen", 3), "three turn-ins seen")
+    # the game changed the reward: green Journeyman (quest 91905, built-in 20) pays 16
+    c.fire("CURRENCY_DISPLAY_UPDATE", 3402, 16, 16, 0, 0)
+    c.fire("QUEST_TURNED_IN", 91905, 0, 800)
+    ctx.eq(reward(248706)[:3], (16, 800, "seen"), "a lower reward is believed at once")
+    ctx.eq(reward(248705)[:3], (16, 800, "seen"), "... for every green Journeyman crate")
+    ctx.eq(reward(248688)[:3], (10, 500, "data"), "... not for the white ones")
+    check_clean(ctx, c)
+
+
+@scenario("markets", "2026.11.0: prices are kept per Auction House (realm + faction, neutral apart); a neutral house costs sales at 15%")
+def s_markets(ctx):
+    c = ctx.client()
+    WC = c.WC
+    db = c.g("GetrichDB")
+    ctx.eq(str(db.market), "Classic Beta PvP 2|Horde", "market after login")
+    ctx.eq(fnum(c.eval("local WC = ...; return WC:AHCut()", WC)), 0.05, "faction house cut")
+    c.set_listings(2770, [(40, 100)])
+    c.open_ah()
+    start_scan(c, "crates", 900)
+    cost = lambda: first(c.eval("local WC = ...; return (WC:CostFor(2770, 20))", WC))
+    ctx.eq(fnum(cost()), 800, "Copper Ore x 20 at the Horde house")
+    ctx.check(db.scannedAt.crates, "scannedAt.crates")
+    c.close_ah()
+    # a neutral auctioneer: its own (empty) market, 15% cut, a chat line
+    c.M.auctioneer = c.lua.table_from({"npcID": 8661, "name": "Auctioneer Beardo", "neutral": True})
+    c.set_listings(2770, [(90, 100)])
+    c.open_ah()
+    ctx.eq(str(db.market), "Classic Beta PvP 2|Neutral", "market at a neutral auctioneer")
+    ctx.eq(fnum(c.eval("local WC = ...; return WC:AHCut()", WC)), 0.15, "neutral house cut")
+    ctx.check(cost() is None and not db.scannedAt.crates, "the neutral house starts without the Horde prices")
+    ctx.check(any("15%" in str(m) for m in c.chat), "chat line about the neutral house: %s" % list(c.chat)[-3:])
+    start_scan(c, "crates", 900)
+    ctx.eq(fnum(cost()), 1800, "Copper Ore x 20 at the neutral house")
+    c.close_ah()
+    ctx.eq(str(db.market), "Classic Beta PvP 2|Horde", "back to the faction market when the neutral house closes")
+    ctx.eq(fnum(cost()), 800, "the Horde prices are back")
+    ctx.eq(fnum(c.eval("local WC = ...; return WC:AHCut()", WC)), 0.05, "faction cut again")
+    ctx.eq(fnum(db.markets["Classic Beta PvP 2|Neutral"].results[2770].min), 90, "the neutral prices are parked")
+    # a faction auctioneer is not neutral
+    c.M.auctioneer = c.lua.table_from({"npcID": 8672, "name": "Auctioneer Thathung"})
+    c.open_ah()
+    ctx.eq(str(db.market), "Classic Beta PvP 2|Horde", "market at a Horde auctioneer")
+    c.close_ah()
+    # clearing the scans clears every house
+    WC.Settings.Clear(WC.Settings, "scans")
+    ctx.check(cost() is None and db.markets["Classic Beta PvP 2|Neutral"].results is None, "Clear scans empties all houses")
+    check_clean(ctx, c)
+
+
+@scenario("markets_login", "2026.11.0: logging in on a character of another faction parks the other house's prices; an old database is adopted as this character's house")
+def s_markets_login(ctx):
+    now = SERVER_TIME0
+    sv = ("GetrichDB = { resultsFormat = 3, market = 'Classic Beta PvP 2|Alliance', "
+          "results = { [2770] = { status = 'listed', entries = { { 55, 100 } }, min = 55, avail = 100, time = %d } }, "
+          "scannedAt = { crates = %d }, history = { [2770] = { h = { [%d] = { min = 55, qty = 100 } }, d = {} } }, "
+          "browse = { full = %d, items = { [2770] = { min = 55, qty = 100, t = %d } } } }") % (now, now, now // 3600, now, now)
+    c = ctx.client(sv=sv)
+    WC = c.WC
+    db = c.g("GetrichDB")
+    ctx.eq(str(db.market), "Classic Beta PvP 2|Horde", "market after logging in on the Horde character")
+    ctx.check(db.results[2770] is None and db.history[2770] is None and db.browse["items"][2770] is None and not db.scannedAt.crates,
+              "the Alliance house's prices must not show for the Horde character")
+    park = db.markets["Classic Beta PvP 2|Alliance"]
+    ctx.eq((fnum(park.results[2770].min), fnum(park.browse["items"][2770].min), fnum(park.history[2770].h[now // 3600].min)), (55, 55, 55), "parked Alliance prices")
+    ctx.check(c.eval("local WC = ...; return rawequal(WC.Scanner.results, GetrichDB.results)", WC), "the Scanner must write into the loaded house's table")
+    c.slash("/gr crates")
+    c.set_listings(2770, [(40, 100)])
+    c.open_ah()
+    start_scan(c, "crates", 900)
+    ctx.eq(fnum(first(c.eval("local WC = ...; return (WC:CostFor(2770, 20))", WC))), 800, "Horde price after a scan")
+    ctx.eq(fnum(db.markets["Classic Beta PvP 2|Alliance"].results[2770].min), 55, "Alliance price untouched by the Horde scan")
+    check_clean(ctx, c)
+    # a database from before 2026.11.0 has no market: its prices become this character's house
+    old = "GetrichDB = { resultsFormat = 3, results = { [2770] = { status = 'listed', entries = { { 61, 100 } }, min = 61, avail = 100, time = %d } } }" % now
+    c2 = ctx.client(sv=old)
+    db2 = c2.g("GetrichDB")
+    ctx.eq(str(db2.market), "Classic Beta PvP 2|Horde", "an old database is adopted")
+    ctx.eq(fnum(db2.results[2770].min), 61, "... with its prices")
+    ctx.check(db2.markets is None, "... and nothing parked")
+    check_clean(ctx, c2)
 
 
 # ===================================================================================================================

@@ -2,7 +2,7 @@
 """Regenerate the JSON fixtures used by tests/wowmock.py and tests/test_merge.py.
 
 Sources (not part of the repo; only needed to regenerate):
-  * Blizzard UI source mirror, branch "forever", build 1.60.1.70450 (commit 172a387):
+  * Blizzard UI source mirror, branch "forever", build 1.60.1.70938 (commit bebcb6b; a full checkout):
       --mirror  /tmp/claude-0/api-agent/wow-ui-source
   * Forever client tables exported from wago.tools, build 1.60.1.70450 (ItemSparse.csv, Item.csv):
       --db2     <scratchpad>/wago/db70450
@@ -182,7 +182,7 @@ def build_api():
             mix.setdefault(m.group(1), set()).add(m.group(2))
     api["settings_functions"] = sorted(st)
     api["settings_mixins"] = {k: sorted(v) for k, v in mix.items()}
-    api["source"] = "wow-ui-source branch forever, build 1.60.1.70450 (commit 172a387e3ab85b26e6640d3058d5ec1e6ccd4c63)"
+    api["source"] = "wow-ui-source branch forever, build 1.60.1.70938 (commit bebcb6b)"
     return api
 
 

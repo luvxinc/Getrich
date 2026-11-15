@@ -35,6 +35,15 @@ python3 tools/gen_data.py --download --db cache/1.60.1.70532 --build 1.60.1.7053
 `--check` alone only checks the files. With `--db` it generates first, so pass every input you used, or the
 vendor file loses its Classic part.
 
+The 2026-11-15 files (`DataRecipes.lua`, `DataDisenchant.lua`) were made from client build 1.60.1.70938, the live game:
+- Against 1.60.1.70450: 1 new recipe (Enchant Boots - Speed), 26 recipes with new skill thresholds, 5 bag recipes that
+  take one more bolt, 37 recipes that now have a recipe item, and 1 more item that cannot be disenchanted.
+- `DataVendor.lua` was not regenerated: `BuyPrice` and `VendorStackCount` of all its 310 items are the same in
+  1.60.1.70938, and regenerating needs the merchant scans (`--sv`) of the player's SavedVariables.
+
+The hand-kept data (crates, writs, the Auction House cut, Legacy perks) is checked with `tools/verify_game_data.py`;
+its docstring says what it reads and what was checked by hand on Wowhead.
+
 The 2026-10-22 files were made from these inputs:
 - Client build 1.60.1.70450. The DB2 tables used are byte-identical in 1.60.1.70532.
 - The user's old Getrich.lua scans: 51 merchant scans from builds 70374-70450, and 300 captured recipes.
@@ -75,6 +84,12 @@ unlimited stock (pfQuest `V` stock 0) are added with `classic = true`:
   band up to item level 60.
 - Forever's new rare bands 5-15 and 16-20 (and 21-25, formerly 20-25) fall inside the wiki's Classic rare 1-25
   row: Small Glimmering Shard 100%. `est = "nearest"` would mark a band with no Classic equivalent; there is none now.
+- One Forever difference is built in (2026-11-15): uncommon weapons of item level 21-25 and 26-30 give Greater Magic
+  Essence where Classic gave Lesser / Greater Astral Essence. Source: Wowhead's WoW Forever "disenchanted from" lists
+  of the dusts and Magic / Astral essences, summed per band (73 weapons / 4,626 disenchants and 58 / 2,859; no weapon
+  among the items that give an Astral Essence). The same data agrees with the Classic table for the main output of
+  every other band it covers (uncommon weapons and armor, item level 5-65). Shards, the Mystic / Nether / Eternal
+  essences and rare / epic items were not covered: Wowhead asked for a human check after about 15 pages.
 - `SkillRequired` is 0 in every Forever band (and in Classic Era), so `skill = 1`.
 - `noDE` lists weapons and armor of quality 2-4, item level <= 70, that carry ItemSparse `Flags_0` 0x8000.
 

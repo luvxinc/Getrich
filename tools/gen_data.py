@@ -94,8 +94,16 @@ _ARMOR2 = [
 _WEAPON2 = [
     (5, 15, [(LME, .80, 1, 2), (SD, .20, 1, 2)]),
     (16, 20, [(GME, .75, 1, 2), (SD, .20, 2, 3), (SGS, .05, 1, 1)]),
-    (21, 25, [(LAE, .75, 1, 2), (SD, .15, 4, 6), (SGS, .10, 1, 1)]),
-    (26, 30, [(GAE, .75, 1, 2), (SOUL, .20, 1, 2), (LGS, .05, 1, 1)]),
+    # Forever (live game, 2026-11-15) differs from Classic in the next two weapon bands: the essence is Greater Magic
+    # Essence where Classic gave Lesser / Greater Astral Essence. Wowhead (WoW Forever) "disenchanted from" data:
+    # 73 uncommon weapons of item level 21-25, 4,626 disenchants, Greater Magic Essence 68%; 58 of item level 26-30,
+    # 2,859 disenchants, 67%; and no weapon at all among the 257 / 263 items that give Lesser / Greater Astral
+    # Essence (those are all armor). E.g. Iridescent Hammer (28): Greater Magic Essence 6, Soul Dust 4, Large
+    # Glimmering Shard 1 of 11; Mighty Iron Hammer (30): Greater Magic Essence 6 of 6. The other weapon bands and the
+    # armor bands agree with Classic there (dust share 20-23% for weapons, 74-76% for armor, item level 41-65).
+    # Only the essence is swapped; odds and quantities stay Classic's.
+    (21, 25, [(GME, .75, 1, 2), (SD, .15, 4, 6), (SGS, .10, 1, 1)]),
+    (26, 30, [(GME, .75, 1, 2), (SOUL, .20, 1, 2), (LGS, .05, 1, 1)]),
     (31, 35, [(LMYE, .75, 1, 2), (SOUL, .20, 2, 5), (SGLOW, .05, 1, 1)]),
     (36, 40, [(GMYE, .75, 1, 2), (VISION, .20, 1, 2), (LGLOW, .05, 1, 1)]),
     (41, 45, [(LNE, .75, 1, 2), (VISION, .20, 2, 5), (SRAD, .05, 1, 1)]),
@@ -821,6 +829,9 @@ def write_de(path, de, sparse, args, stats):
     L.append("-- Odds and quantities are ESTIMATES from Classic 1.12: vmangos / cmangos disenchant_loot_template, cross-checked")
     L.append("--   with warcraft.wiki.gg \"Disenchanting tables\" and DisenchantForever Materials.lua (MIT, APGM82). Forever's")
     L.append("--   real yields are decided by the server and are not published; Disenchant.lua measures them from real casts.")
+    L.append("-- One difference from Classic is built in: uncommon weapons of item level 21-30 give Greater Magic Essence, not")
+    L.append("--   Lesser / Greater Astral Essence (Wowhead's WoW Forever disenchant data, 2026-11-15: 7,485 disenchants of 131")
+    L.append("--   such weapons; see tools/gen_data.py).")
     L.append("-- Forever band changes vs Classic Era: new rare bands 5-15 and 16-20 and rare 20-25 became 21-25; all three are")
     L.append("--   inside the wiki's Classic rare 1-25 row (Small Glimmering Shard 100%); uncommon/epic bands unchanged.")
     L.append("-- est = \"nearest\" would mark a band with no Classic equivalent (outputs of the nearest band); none at present.")
@@ -1210,7 +1221,11 @@ def check(out_dir, db=None, sv_paths=(), expected=None):
     ok(m.get(10940) == (0.75, 4, 6) and m.get(10998) == (0.15, 1, 2) and m.get(10978) == (0.1, 1, 1),
        "uncommon armor 21-25 should be SD 75%% 4-6 / LAE 15%% 1-2 / SGS 10%% 1: %r" % (m,))
     m = outmap(band(2, 2, 23))
-    ok(m.get(10998) == (0.75, 1, 2) and m.get(10940) == (0.15, 4, 6), "uncommon weapon 21-25 should be LAE 75 / SD 15")
+    ok(m.get(10939) == (0.75, 1, 2) and m.get(10940) == (0.15, 4, 6) and 10998 not in m,
+       "uncommon weapon 21-25 should be GME 75 / SD 15 (Forever: no Astral Essence from weapons of item level 21-30)")
+    m = outmap(band(2, 2, 28))
+    ok(m.get(10939) == (0.75, 1, 2) and m.get(11083) == (0.2, 1, 2) and 11082 not in m,
+       "uncommon weapon 26-30 should be GME 75 / Soul Dust 20 (Forever)")
     for lvl in (8, 18):
         b = band(3, 4, lvl)
         ok(b is not None and b.est is None and outmap(b).get(10978) == (1, 1, 1),
