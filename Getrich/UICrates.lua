@@ -6,14 +6,29 @@ local L = WC.L
 
 WC.AddLocale({
   enUS = {
+    EST_NOTE = "~ = estimate: only the cheapest price is known (Auctionator, or a browse of the whole Auction House), so buying a whole bundle can cost more. A scan searches the best entries exactly.",
+    IDLE_QUICK = "~ = Auctionator's prices (%s old) · a scan checks the best %d exactly",
+    IDLE_QUICK_LAST = "Checked %s · ~ = Auctionator's prices (%s old)",
+    UI_AGE_MIN = "%d min",
+    UI_AGE_HOUR = "%d h",
     TT_REWARD_GUESS = "Reward not confirmed: no source has published what an Artisan crate pays, so this continues the pattern of the lower tiers. The addon records the real reward the first time you turn one in.",
     TT_REWARD_SEEN = "Reward as recorded from your own turn-ins (%d).",
   },
   zhCN = {
+    EST_NOTE = "~ = 估算：只知道最低价（来自 Auctionator 或整库浏览），整组购买可能更贵。点扫描会精确核实排在前面的几项。",
+    IDLE_QUICK = "~ 是 Auctionator 的价格（%s前）· 扫描只精确核实前 %d 名",
+    IDLE_QUICK_LAST = "上次核实 %s · ~ 是 Auctionator 的价格（%s前）",
+    UI_AGE_MIN = "%d 分钟",
+    UI_AGE_HOUR = "%d 小时",
     TT_REWARD_GUESS = "奖励未确认：目前没有任何来源公布 Artisan 箱子的奖励，这里按低等级箱子的规律估算。你交过一次后，插件会记下实际奖励并改用它。",
     TT_REWARD_SEEN = "奖励为你实际交箱记录到的数值（%d 次）。",
   },
   zhTW = {
+    EST_NOTE = "~ = 估算：只知道最低價（來自 Auctionator 或整庫瀏覽），整組購買可能更貴。點掃描會精確核實排在前面的幾項。",
+    IDLE_QUICK = "~ 是 Auctionator 的價格（%s前）· 掃描只精確核實前 %d 名",
+    IDLE_QUICK_LAST = "上次核實 %s · ~ 是 Auctionator 的價格（%s前）",
+    UI_AGE_MIN = "%d 分鐘",
+    UI_AGE_HOUR = "%d 小時",
     TT_REWARD_GUESS = "獎勵未確認：目前沒有任何來源公布 Artisan 箱子的獎勵，這裡按低等級箱子的規律估算。你交過一次後，插件會記下實際獎勵並改用它。",
     TT_REWARD_SEEN = "獎勵為你實際交箱記錄到的數值（%d 次）。",
   },
@@ -109,7 +124,7 @@ function Tab:FillRow(row, e, isTop)
   row.name:SetText(CrateName(c))
   local lvlText = e.locked and ("|cffff5a4a" .. L.NEED_LEVEL_FMT:format(c.lvl) .. "|r") or L.LEVEL_FMT:format(c.lvl)
   row.sub:SetText(WC.TIER_NAME[c.tier] .. " · " .. lvlText .. " · " .. L.FAVOR_FMT:format(Num(e.favorExp) .. (e.rewardState == "guess" and "?" or "")))
-  row.price:SetText(e.crateCost and Money(e.crateCost) or (e.crateStatus and (C_ORANGE .. L.NO_STOCK .. "|r") or Money(nil)))
+  row.price:SetText(e.crateCost and ((e.crateEst and "~" or "") .. Money(e.crateCost)) or (e.crateStatus and (C_ORANGE .. L.NO_STOCK .. "|r") or Money(nil)))
   row.hotB:SetShown(e.bestIdx ~= nil)
   local stocked = 0
   for _, o in ipairs(e.opts) do if o.cost then stocked = stocked + 1 end end
@@ -124,8 +139,8 @@ function Tab:FillRow(row, e, isTop)
   if e.status == "nocrate" and e.bestIdx then
     row.fillSub:SetText(C_ORANGE .. L.ST_NOCRATE .. "|r")
   end
-  row.mats:SetText(Money(e.matCost))
-  row.per:SetText(e.perFavor and UI.Colored(Money(e.perFavor), isTop and C_GREEN or "|cffffffff") or Money(nil))
+  row.mats:SetText(((e.bestIdx and e.opts[e.bestIdx].est) and "~" or "") .. Money(e.matCost))
+  row.per:SetText(e.perFavor and ((e.est and "~" or "") .. UI.Colored(Money(e.perFavor), isTop and C_GREEN or "|cffffffff")) or Money(nil))
 end
 
 function Tab:Refresh()
@@ -148,7 +163,7 @@ function Tab:Refresh()
   b.name:SetText(CrateName(c) .. "  " .. C_GREY .. WC.TIER_NAME[c.tier] .. " · " .. L.LEVEL_FMT:format(c.lvl) .. "|r")
   local o = top.opts[top.bestIdx]
   b.detail:SetText(L.BEST_DETAIL:format(Money(top.crateCost), C_GREEN .. o.qty .. " × " .. WC:ItemName(o.itemID) .. "|r", Money(top.matCost), Money(top.silver)))
-  b.per:SetText(Money(top.perFavor))
+  b.per:SetText((top.est and "~" or "") .. Money(top.perFavor))
   b.net:SetText(L.BEST_NET:format(Money(top.net), Num(top.favorExp) .. (top.rewardState == "guess" and "?" or "")))
 end
 
@@ -173,7 +188,7 @@ function Tab:ShowTooltip(owner, e, kind)
   GameTooltip:AddDoubleLine(L.TT_BONUS_FAVOR, Num(e.favorExp) .. (favorBonus > 0 and (C_GREEN .. " (+" .. Pct(favorBonus) .. ")|r") or ""), 1, 0.82, 0, 1, 1, 1)
   GameTooltip:AddDoubleLine(L.TT_REP_FILL, "0", 1, 0.82, 0, 1, 1, 1)
   local crateRight
-  if e.crateCost then crateRight = Money(e.crateCost)
+  if e.crateCost then crateRight = (e.crateEst and "~" or "") .. Money(e.crateCost)
   elseif e.crateStatus then crateRight = C_ORANGE .. L.TT_NOT_LISTED .. "|r"
   else crateRight = C_GREY .. L.TT_NOT_SCANNED .. "|r" end
   GameTooltip:AddDoubleLine(L.TT_CRATE_PRICE, crateRight, 1, 0.82, 0, 1, 1, 1)
@@ -184,7 +199,7 @@ function Tab:ShowTooltip(owner, e, kind)
     local right
     local r = o.res
     if o.cost then
-      right = Money(o.cost)
+      right = (o.est and "~" or "") .. Money(o.cost)
       if r and r.min then right = right .. C_GREY .. L.TT_UNIT:format((Money(r.min):gsub("|r", "|r" .. C_GREY))) .. "|r" end
     elseif not o.status then right = C_GREY .. L.TT_NOT_SCANNED .. "|r"
     elseif o.status == "short" then right = C_ORANGE .. L.TT_SHORT:format(r and r.avail or 0) .. "|r"
@@ -201,8 +216,9 @@ function Tab:ShowTooltip(owner, e, kind)
   end
   GameTooltip:AddLine(" ")
   if e.perFavor then
-    GameTooltip:AddDoubleLine(L.TT_NET, Money(e.net), 1, 0.82, 0, 1, 1, 1)
-    GameTooltip:AddDoubleLine(L.TT_PER, Money(e.perFavor), 1, 0.82, 0, 0.3, 1, 0.4)
+    GameTooltip:AddDoubleLine(L.TT_NET, (e.est and "~" or "") .. Money(e.net), 1, 0.82, 0, 1, 1, 1)
+    GameTooltip:AddDoubleLine(L.TT_PER, (e.est and "~" or "") .. Money(e.perFavor), 1, 0.82, 0, 0.3, 1, 0.4)
+    if e.est then GameTooltip:AddLine(L.EST_NOTE, 1, 0.82, 0.4, true) end
   else
     GameTooltip:AddLine(STATUS_TEXT[e.status] or "", 1, 0.6, 0.2)
   end

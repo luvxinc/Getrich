@@ -37,7 +37,7 @@ WC.AddLocale({
     UI_SEARCH = "Search…",
     UI_SEARCH_AFTER_SCAN = "A scan is running, so \"%s\" was only put into the search box. Press Search when the scan is done.",
     UI_TAB_ERROR_FMT = "Error in the %s tab: %s",
-    UI_HELP = "/gr: open or close · /gr scan: scan this tab · /gr scan <tab> · /gr stop · /gr <tab>: open a tab · /gr settings: options · /gr errors: list errors (/getrich and /wc work too). Tabs: %s",
+    UI_HELP = "/gr: open or close · /gr scan: scan this tab · /gr scan <tab> · /gr stop · /gr <tab>: open a tab · /gr settings: options · /gr auc: Auctionator status · /gr errors: list errors (/getrich and /wc work too). Tabs: %s",
     UI_GEAR_TIP = "Settings",
     UI_GEAR_TIP2 = "All options, clearing saved data, and contact details (/gr settings).",
     UI_UNKNOWN_TAB_FMT = "There is no \"%s\" tab.",
@@ -62,7 +62,7 @@ WC.AddLocale({
     UI_SEARCH = "搜索…",
     UI_SEARCH_AFTER_SCAN = "正在扫描，所以只把「%s」填进了搜索栏。扫描结束后再点搜索。",
     UI_TAB_ERROR_FMT = "「%s」页出错：%s",
-    UI_HELP = "/gr：打开或关闭 · /gr scan：扫描当前页 · /gr scan <页> · /gr stop：停止 · /gr <页>：打开某页 · /gr settings：设置 · /gr errors：查看错误（/getrich 和 /wc 也可以）。页：%s",
+    UI_HELP = "/gr：打开或关闭 · /gr scan：扫描当前页 · /gr scan <页> · /gr stop：停止 · /gr <页>：打开某页 · /gr settings：设置 · /gr auc：Auctionator 状态 · /gr errors：查看错误（/getrich 和 /wc 也可以）。页：%s",
     UI_GEAR_TIP = "设置",
     UI_GEAR_TIP2 = "所有选项、清除保存的数据、联系方式（/gr settings）。",
     UI_UNKNOWN_TAB_FMT = "没有「%s」这一页。",
@@ -87,7 +87,7 @@ WC.AddLocale({
     UI_SEARCH = "搜尋…",
     UI_SEARCH_AFTER_SCAN = "正在掃描，所以只把「%s」填進了搜尋欄。掃描結束後再點搜尋。",
     UI_TAB_ERROR_FMT = "「%s」頁出錯：%s",
-    UI_HELP = "/gr：開啟或關閉 · /gr scan：掃描目前頁面 · /gr scan <頁> · /gr stop：停止 · /gr <頁>：開啟某頁 · /gr settings：設定 · /gr errors：查看錯誤（/getrich 和 /wc 也可以）。頁：%s",
+    UI_HELP = "/gr：開啟或關閉 · /gr scan：掃描目前頁面 · /gr scan <頁> · /gr stop：停止 · /gr <頁>：開啟某頁 · /gr settings：設定 · /gr auc：Auctionator 狀態 · /gr errors：查看錯誤（/getrich 和 /wc 也可以）。頁：%s",
     UI_GEAR_TIP = "設定",
     UI_GEAR_TIP2 = "所有選項、清除儲存的資料、聯絡方式（/gr settings）。",
     UI_UNKNOWN_TAB_FMT = "沒有「%s」這一頁。",
@@ -181,6 +181,13 @@ function UI.Duration(seconds)
   local s = math.max(0, math.floor((seconds or 0) + 0.5))
   if s < 60 then return L.UI_SEC_FMT:format(s) end
   return L.UI_MIN_FMT:format(math.floor(s / 60), s % 60)
+end
+
+-- how old a price is, coarse: "3 min", "5 h"
+function UI.Age(seconds)
+  local s = math.max(0, math.floor((seconds or 0) + 0.5))
+  if s < 7200 then return L.UI_AGE_MIN:format(math.max(1, math.floor(s / 60))) end
+  return L.UI_AGE_HOUR:format(math.floor(s / 3600))
 end
 
 -- recolor a money string (its parts reset the color with |r)
@@ -1312,7 +1319,18 @@ function UI:SetIdleText()
   local manual = (kind == "flips" or kind == "de" or not db.autoScan)
   self:SetIndeterminate(false)
   self.bar:SetStatusBarColor(0.35, 0.37, 0.4)
-  if at then
+  -- crates / writs with Auctionator's prices: the list is ranked from them, a scan checks the top exactly
+  local X, S = WC.External, WC.Scanner
+  local extAge = (kind == "crates" or kind == "writs") and X and X.AgeSeconds and S and S.IsQuick and S.IsQuick()
+                 and X:AgeSeconds() or nil
+  if extAge then
+    self.bar:SetValue(at and 1 or 0)
+    if at then
+      self.barText:SetText(L.IDLE_QUICK_LAST:format(date("%m/%d %H:%M", at), UI.Age(extAge)))
+    else
+      self.barText:SetText(L.IDLE_QUICK:format(UI.Age(extAge), tonumber(db.quickTop) or 5))
+    end
+  elseif at then
     self.bar:SetValue(1)
     self.barText:SetText(((manual and L.IDLE_LAST_MANUAL) or L.IDLE_LAST):format(date("%m/%d %H:%M", at)))
   else

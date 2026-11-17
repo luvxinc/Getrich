@@ -336,7 +336,7 @@ print("Lesser Wizard's Robe status:", robe.status)
 assert robe.status == "noitem"
 mana = [e for e in rows if e.writ.writ == 264013][0]
 assert mana.done
-best_per_favor = lx("local WC = ... ; return WC:BestPerFavor()", WC)
+best_per_favor = lx("local WC = ... ; return (WC:BestPerFavor())", WC)   # 2026.11.1: a second value says "estimate"
 cheapest_crate = min(v for v in crate_prices_before.values() if v is not None)
 print("receipt row: crate", receipt.writCost, "receipt", receipt.itemCost, "rep", receipt.repGain, "per rep", receipt.perRep)
 assert receipt.writCost == cheapest_crate and fabs(receipt.itemCost - 15 * best_per_favor) < 1e-9 and receipt.repGain == 50

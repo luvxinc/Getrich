@@ -102,8 +102,8 @@ function Tab:SearchTarget(e, kind)
   if kind == "b" then return e.writ.item end
 end
 
-local function PriceCell(cost, status)
-  if cost then return Money(cost) end
+local function PriceCell(cost, status, est)
+  if cost then return (est and "~" or "") .. Money(cost) end
   if status == "short" then return C_ORANGE .. L.NO_STOCK .. "|r" end
   if status then return C_ORANGE .. L.NO_STOCK .. "|r" end
   return Money(nil)
@@ -112,14 +112,14 @@ end
 function Tab:FillRow(row, e, isTop)
   row:SetAlpha(e.done and 0.5 or 1)
   row.rep:SetText(C_GREEN .. "+" .. Num(e.repGain) .. "|r")
-  row.per:SetText(e.perRep and UI.Colored(Money(e.perRep), isTop and C_GREEN or "|cffffffff") or Money(nil))
+  row.per:SetText(e.perRep and ((e.est and "~" or "") .. UI.Colored(Money(e.perRep), isTop and C_GREEN or "|cffffffff")) or Money(nil))
   if e.receipt then
     row.name:SetText(C_GREEN .. L.RECEIPT_ROW .. "|r")
     row.sub:SetText(L.RECEIPT_SUB)
     row.item:SetText(CrateName(e.crate))
     row.itemSub:SetText(L.RECEIPT_ITEM)
-    row.price:SetText(Money(e.writCost))
-    row.cost:SetText(e.itemCost and Money(e.itemCost) or (C_GREY .. "15 Favor|r"))
+    row.price:SetText((e.writEst and "~" or "") .. Money(e.writCost))
+    row.cost:SetText(e.itemCost and ((e.itemEst and "~" or "") .. Money(e.itemCost)) or (C_GREY .. "15 Favor|r"))
     row.hotB:Hide()
     return
   end
@@ -136,8 +136,8 @@ function Tab:FillRow(row, e, isTop)
   else
     row.itemSub:SetText(C_ORANGE .. (STATUS_TEXT[e.status] or "") .. "|r")
   end
-  row.price:SetText(PriceCell(e.writCost, e.writStatus))
-  row.cost:SetText(PriceCell(e.itemCost, e.itemStatus))
+  row.price:SetText(PriceCell(e.writCost, e.writStatus, e.writEst))
+  row.cost:SetText(PriceCell(e.itemCost, e.itemStatus, e.itemEst))
 end
 
 function Tab:Refresh()
@@ -159,7 +159,7 @@ function Tab:Refresh()
   b.frame.entry = top
   b.label:SetText(L.BEST_LABEL_REP)
   b.perLabel:SetText(L.PER_REP_COST)
-  b.per:SetText(Money(top.perRep))
+  b.per:SetText((top.est and "~" or "") .. Money(top.perRep))
   if top.receipt then
     b.name:SetText(C_GREEN .. L.RECEIPT_ROW .. "|r  " .. C_GREY .. CrateName(top.crate) .. "|r")
     b.detail:SetText(L.BEST_DETAIL_RECEIPT:format(Money(top.writCost), top.itemCost and Money(top.itemCost) or "?", C_GREEN .. Num(top.repGain) .. "|r"))
@@ -184,7 +184,7 @@ end
 
 local function StatusRight(cost, status, res, qty)
   if cost then
-    local s = Money(cost)
+    local s = ((res and res.est) and "~" or "") .. Money(cost)
     if res and res.min and qty and qty > 1 then
       s = s .. C_GREY .. L.TT_UNIT:format((Money(res.min):gsub("|r", "|r" .. C_GREY))) .. "|r"
     end
@@ -223,8 +223,9 @@ function Tab:ShowTooltip(owner, e, kind)
   GameTooltip:AddDoubleLine(L.TT_WRIT_PRICE, StatusRight(e.writCost, e.writStatus, e.writRes, 1), 1, 0.82, 0, 1, 1, 1)
   GameTooltip:AddDoubleLine(L.TT_ITEM_COST .. ": " .. ItemLine(w), StatusRight(e.itemCost, e.itemStatus, e.itemRes, w.qty), 1, 0.82, 0, 1, 1, 1)
   if e.cost then
-    GameTooltip:AddDoubleLine(L.TT_TOTAL, Money(e.cost), 1, 0.82, 0, 1, 1, 1)
-    GameTooltip:AddDoubleLine(L.TT_PER_REP, Money(e.perRep), 1, 0.82, 0, 0.3, 1, 0.4)
+    GameTooltip:AddDoubleLine(L.TT_TOTAL, (e.est and "~" or "") .. Money(e.cost), 1, 0.82, 0, 1, 1, 1)
+    GameTooltip:AddDoubleLine(L.TT_PER_REP, (e.est and "~" or "") .. Money(e.perRep), 1, 0.82, 0, 0.3, 1, 0.4)
+    if e.est then GameTooltip:AddLine(L.EST_NOTE, 1, 0.82, 0.4, true) end
   elseif STATUS_TEXT[e.status] then
     GameTooltip:AddLine(STATUS_TEXT[e.status], 1, 0.6, 0.2)
   end

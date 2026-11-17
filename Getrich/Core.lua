@@ -194,22 +194,24 @@ end
 -- crates: cost per Merchant's Favor
 
 -- For each crate the cheapest bundle the AH can fully supply is picked automatically.
+-- Prices are the exact order book of a targeted search where there is one, else an estimate (WC:CostBest): e.crateEst,
+-- opt.est and e.est (crate or chosen bundle estimated) say which numbers are estimates.
 function WC:EvaluateCrates()
   local level = UnitLevel("player") or 0
   local favorMult = 1 + WC:FavorBonus()
   local list = {}
   for _, crate in ipairs(WC.CRATES) do
     local e = { crate = crate, opts = {}, locked = level < crate.lvl, key = crate.id, group = crate.tier }
-    local crateCost, crateStatus = WC:CostFor(crate.id, 1)
-    e.crateCost, e.crateStatus = crateCost, crateStatus
+    local crateCost, crateStatus, _, crateEst = WC:CostBest(crate.id, 1)
+    e.crateCost, e.crateStatus, e.crateEst = crateCost, crateStatus, crateEst
     e.favor, e.silver, e.rewardState, e.rewardSeen = WC:CrateReward(crate)
     e.favorExp = e.favor * favorMult
     local anyListed = false
     for j, opt in ipairs(crate.opts) do
-      local cost, status, res = WC:CostFor(opt[1], opt[2])
+      local cost, status, res, est = WC:CostBest(opt[1], opt[2])
       if status then e.matsScanned = true end
       if status == "ok" or status == "short" then anyListed = true end
-      e.opts[j] = { itemID = opt[1], qty = opt[2], note = opt[3], cost = cost, status = status, res = res }
+      e.opts[j] = { itemID = opt[1], qty = opt[2], note = opt[3], cost = cost, status = status, res = res, est = est }
       if cost and (not e.matCost or cost < e.matCost) then
         e.matCost = cost
         e.bestIdx = j
@@ -219,6 +221,7 @@ function WC:EvaluateCrates()
       e.net = e.crateCost + e.matCost - e.silver
       e.perFavor = math.max(e.net, 0) / e.favorExp
       e.status = "ok"
+      e.est = (e.crateEst or e.opts[e.bestIdx].est) and true or false
     elseif not crateStatus and not e.matsScanned then
       e.status = "unscanned"
     elseif not e.crateCost then
@@ -253,16 +256,17 @@ function WC:VisibleCrates(list)
   return out
 end
 
--- cheapest Merchant's Favor you can make right now (crates you can open first)
+-- cheapest Merchant's Favor you can make right now (crates you can open first); second value: it is an estimate
 function WC:BestPerFavor()
-  local best, bestAny
+  local best, bestAny, bestEst, anyEst
   for _, e in ipairs(WC:EvaluateCrates()) do
     if e.perFavor and e.rewardState ~= "guess" then      -- a guessed reward must not price anything else
-      if not bestAny or e.perFavor < bestAny then bestAny = e.perFavor end
-      if not e.locked and (not best or e.perFavor < best) then best = e.perFavor end
+      if not bestAny or e.perFavor < bestAny then bestAny, anyEst = e.perFavor, e.est end
+      if not e.locked and (not best or e.perFavor < best) then best, bestEst = e.perFavor, e.est end
     end
   end
-  return best or bestAny
+  if best then return best, bestEst and true or false end
+  return bestAny, anyEst and true or false
 end
 
 -- ---------------------------------------------------------------------------
@@ -273,14 +277,15 @@ function WC:EvaluateWrits()
   local list = {}
   for i, w in ipairs(WC.WRITS) do
     local e = { writ = w, key = i, group = -w.rep }
-    e.writCost, e.writStatus, e.writRes = WC:CostFor(w.writ, 1)
-    e.itemCost, e.itemStatus, e.itemRes = WC:CostFor(w.item, w.qty)
+    e.writCost, e.writStatus, e.writRes, e.writEst = WC:CostBest(w.writ, 1)
+    e.itemCost, e.itemStatus, e.itemRes, e.itemEst = WC:CostBest(w.item, w.qty)
     e.repGain = w.rep * repMult
     e.done = WC:WritDoneToday(w.quest)
     if e.writCost and e.itemCost then
       e.cost = e.writCost + e.itemCost
       e.perRep = e.cost / e.repGain
       e.status = "ok"
+      e.est = (e.writEst or e.itemEst) and true or false
     elseif not e.writStatus then
       -- The writ itself has not been searched yet. Its requested item can already have a price from another scan
       -- (Unstable Trigger and Truesilver Transformer are crate materials too): that does not make it "not for sale".
@@ -300,14 +305,16 @@ function WC:EvaluateWrits()
 
   -- Empty crate + Forged Delivery Receipt (15 Favor, needs Friendly): +50 reputation.
   -- Uses the cheapest crate on the AH and values the 15 Favor at your cheapest Favor price.
-  local cheapest, cheapestCrate
+  local cheapest, cheapestCrate, cheapestEst
   for _, c in ipairs(WC.CRATES) do
-    local cost = WC:CostFor(c.id, 1)
-    if cost and (not cheapest or cost < cheapest) then cheapest, cheapestCrate = cost, c end
+    local cost, _, _, est = WC:CostBest(c.id, 1)
+    if cost and (not cheapest or cost < cheapest) then cheapest, cheapestCrate, cheapestEst = cost, c, est end
   end
   if cheapest then
-    local perFavor = WC:BestPerFavor()
+    local perFavor, favorEst = WC:BestPerFavor()
     local e = { receipt = true, crate = cheapestCrate, key = 0, group = 0, status = "ok" }
+    e.writEst, e.itemEst = cheapestEst, perFavor and favorEst or false
+    e.est = (e.writEst or e.itemEst) and true or false
     e.writCost = cheapest                                   -- shown in the "writ" price column
     e.itemCost = perFavor and WC.REP.receiptFavor * perFavor or nil
     e.cost = cheapest + (e.itemCost or 0)
@@ -410,6 +417,7 @@ end
 -- load the price tables of the Auction House in use (Store:UseMarket)
 local function UseMarket(neutral)
   WC.neutralAH = neutral and true or false
+  if WC.External and WC.External.Invalidate then WC.External:Invalidate() end   -- Auctionator scans are per house
   local S = WC.Store
   if not (S and S.UseMarket and S.MarketKey) then return end
   local ok, err = pcall(function() S:UseMarket(S:MarketKey(neutral)) end)
@@ -523,6 +531,8 @@ SlashCmdList.GETRICH = function(msg)
     else
       for i, e in ipairs(list) do WC:Print(i .. ". " .. e) end
     end
+  elseif cmd == "auc" or cmd == "auctionator" then
+    if WC.External then WC:Print(WC.External:Describe()) end
   elseif cmd == "help" or cmd == "?" then
     PrintHelp()
   else

@@ -2570,7 +2570,7 @@ def s_artisan(ctx):
     ctx.eq(str(e.rewardState), "guess", "Artisan Ore reward state")
     ctx.eq(fnum(e.perFavor), (1000 + 200 - 1000) / 20.0, "Artisan Ore cost per Favor with the placeholder (crate 1000 + 20 x 10 - 10 s) / 20")
     ctx.check(ev[248697].locked, "a level 25 character can't open a level 35 crate")
-    ctx.check(c.eval("local WC = ...; return WC:BestPerFavor()", WC) is None, "a guessed reward must not become the Favor price used for the receipt")
+    ctx.check(first(c.eval("local WC = ...; return WC:BestPerFavor()", WC)) is None, "a guessed reward must not become the Favor price used for the receipt")
     c.slash("/gr crates")
     ctx.check(any("20?" in t for t in c.texts()), "the crate row should mark a guessed reward with '?': %s" % [t for t in c.texts() if "Favor" in t][:6])
     # the first real turn-in: quest 91902 (white Artisan) pays 25 Favor and 12 s 50 c
@@ -2687,6 +2687,415 @@ def s_markets_login(ctx):
     ctx.eq(fnum(db2.results[2770].min), 61, "... with its prices")
     ctx.check(db2.markets is None, "... and nothing parked")
     check_clean(ctx, c2)
+
+
+# ===================================================================================================================
+# 2026.11.1: Auctionator's prices as estimates, quick scans, markets keyed by ruleset
+# ===================================================================================================================
+def install_auctionator(c):
+    """A stand-in for Auctionator's add-on API (Auctionator.API.v1), to be installed before login.
+    Auctionator.prices[itemID] = { cheapest unit price, age in days }."""
+    c.eval("""
+      local A = { API = { v1 = {} }, callbacks = {}, prices = {} }
+      local function check(id) if type(id) ~= "string" or id == "" then error("Invalid callerID. Use the name of your add-on.") end end
+      function A.API.v1.GetAuctionPriceByItemID(callerID, itemID) check(callerID); local p = A.prices[itemID]; return p and p[1] or nil end
+      function A.API.v1.GetAuctionAgeByItemID(callerID, itemID) check(callerID); local p = A.prices[itemID]; return p and p[2] or nil end
+      function A.API.v1.RegisterForDBUpdate(callerID, fn) check(callerID); A.callbacks[#A.callbacks + 1] = fn end
+      rawset(_G, "Auctionator", A)""")
+
+
+# other crate materials (their crates are not listed: nothing ranks from them) and items writs ask for
+AUC_BACKGROUND_CRATE = [7911, 10620, 11370, 13464, 8838, 8839, 8845, 8846]
+
+
+def auctionator_update(c, prices, background=0, fire=True):
+    """Auctionator stores `prices` ({itemID: unit price}) as seen today and tells its listeners.
+    background = a price: the update also saw 8 other crate materials and the items of the first 8 writs at that
+    price, like a whole-AH scan does. background = 0: only `prices`, like a search for those items."""
+    c.eval("""local WC, prices, bg, crateBg, fire = ...
+      local A = Auctionator
+      for id, p in pairs(prices) do A.prices[id] = { p, 0 } end
+      if bg > 0 then
+        for _, id in pairs(crateBg) do A.prices[id] = { bg, 0 } end
+        for i = 1, 8 do A.prices[WC.WRITS[i].item] = { bg + i, 0 } end
+      end
+      if fire then for _, fn in ipairs(A.callbacks) do fn() end end""",
+           c.WC, c.lua.table_from(prices), background, c.lua.table_from(AUC_BACKGROUND_CRATE), fire)
+
+
+def auctionator_new_day(c):
+    """Auctionator's day counter moves on: everything it knows is one day older."""
+    c.eval("for _, p in pairs(Auctionator.prices) do p[2] = p[2] + 1 end")
+
+
+def crate_entry(c, crate_id):
+    return [e for e in lua_list(c.eval("local WC = ...; return WC:EvaluateCrates()", c.WC)) if e.crate.id == crate_id][0]
+
+
+def ext_state(c):
+    """(usable, why) of External.lua, freshly computed."""
+    return multi(c.eval("local WC = ...; local X = WC.External; X:Invalidate(); local s = X:State(); return X:Usable(), s.why", c.WC), 2)
+
+
+@scenario("auctionator_estimates", "2026.11.1: after Auctionator finishes a whole-AH scan, its cheapest prices rank crates before any Getrich scan (marked ~); a quick scan searches only the top entries, in rounds; exact prices replace the estimates")
+def s_auctionator(ctx):
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
+    WC = c.WC
+    db = c.g("GetrichDB")
+    X = WC.External
+    db.autoScan = False
+    ctx.eq(ext_state(c), (False, "noscan"), "Auctionator is there, but no scan has been watched")
+    ctx.check(crate_entry(c, 248683).status == "unscanned", "no scan watched, no Getrich scan: unscanned")
+    # what Auctionator already had before Getrich looked: not used (not known when and where it is from)
+    auctionator_update(c, {248684: 900, 2770: 45}, fire=False)
+    auctionator_new_day(c)
+    ctx.eq(ext_state(c), (False, "noscan"), "prices Auctionator already had are not used")
+    # the real Auction House: Iron Ore is thin (1 at 30, then 500), Copper too; Tin is deep
+    c.set_listings(248683, [(520, 1)])
+    c.set_listings(2770, [(40, 5), (100, 100)])
+    c.set_listings(2771, [(30, 100)])
+    c.set_listings(248687, [(600, 2)])
+    c.set_listings(2772, [(30, 1), (500, 100)])
+    c.open_ah()
+    # Auctionator scans the whole AH. Apprentice Ore (5 Favor, 2s50c): crate 500, Copper 40, Tin 30. Journeyman Ore
+    # (10 Favor, 5s): crate 600, Iron 30, Silver Ore not seen. Apprentice Textiles: the crate was last seen yesterday.
+    auctionator_update(c, {248683: 500, 2770: 40, 2771: 30, 248687: 600, 2772: 30, 2589: 10}, background=10000)
+    ctx.eq(ext_state(c), (True, None), "the scan was watched: Auctionator's prices are in use")
+    ctx.eq(str(db.market), "Classic Beta PvP 2|Horde", "(market of this client)")
+    rec = db.extScans[db.market]
+    ctx.check(rec is not None and abs(rec.t - c.eval("return time()")) <= 1, "the scan is noted for this Auction House, now")
+    ctx.eq(multi(c.eval("local WC = ...; return WC:CostForAny(2770, 20, true)", WC), 2), (800, "est"), "Copper Ore x 20 from Auctionator: cheapest price x 20, an estimate")
+    ctx.eq(str(first(c.eval("local WC = ...; local _, _, res = WC:CostBest(2770, 20); return res.source", WC))), "auctionator", "source")
+    ctx.eq(multi(c.eval("local WC = ...; return WC:CostForAny(2770, 20)", WC), 2), (None, None), "the other tabs do not use Auctionator: no data for Copper Ore")
+    ctx.eq(multi(c.eval("local WC = ...; return WC:CostBest(2775, 10)", WC), 2), (None, "none"), "Silver Ore: not seen in the scan")
+    e = crate_entry(c, 248683)
+    ctx.eq((str(e.status), fnum(e.crateCost), fnum(e.matCost), bool(e.est), fnum(e.perFavor)), ("ok", 500, 600, True, 170),
+           "Apprentice Ore from estimates: crate 500 + Tin 20 x 30 - 2s50c, per Favor 170")
+    e = crate_entry(c, 248687)
+    ctx.eq((fnum(e.matCost), bool(e.est), fnum(e.perFavor)), (600, True, 70), "Journeyman Ore from estimates: (600 + 600 - 500) / 10")
+    e = crate_entry(c, 248684)
+    ctx.eq((str(e.status), bool(e.crateEst)), ("nocrate", True), "Apprentice Textiles: the crate was not seen in the scan -> not for sale (estimate)")
+    c.slash("/gr crates")
+    t = c.texts()
+    ctx.check(any(x.startswith("~") for x in t), "estimated prices are marked with ~: %s" % t[:12])
+    ctx.eq(float(first(c.eval("local WC = ...; return (WC:BestPerFavor())", WC))), 70.0, "BestPerFavor from estimates")
+    ctx.check(multi(c.eval("local WC = ...; return WC:BestPerFavor()", WC), 2)[1] is True, "... flagged as an estimate")
+    c.chat.clear() if hasattr(c.chat, "clear") else None
+    c.slash("/gr auc")
+    ctx.check(any("Auctionator" in str(m) for m in c.chat), "/gr auc prints the status: %s" % list(c.chat)[-2:])
+    # the other tabs: nothing breaks
+    ctx.check(first(c.eval("local WC = ...; return (WC:UnitPrice(WC.WRITS[1].item))", WC)) is None, "UnitPrice (other tabs) does not use Auctionator")
+    ctx.eq(multi(c.eval("local WC = ...; return WC:CostBest(WC.WRITS[1].item, 1)", WC), 2), (10001, "ok"), "a writ item on the Writs tab: Auctionator's price")
+    for key in lua_list(c.eval("local WC = ...; return WC.UI:TabKeys()", WC)):
+        c.slash("/gr " + str(key))
+    c.slash("/gr crates")
+    # a quick scan
+    db.quickTop = 1
+    ctx.check(WC.Scanner.IsQuick(), "quick scans are on with a watched Auctionator scan")
+    start_scan(c, "crates", 900)
+    searched = sorted(int(k) for k in lua_keys(db.results))
+    ctx.eq(searched, [2770, 2771, 2772, 2775, 248683, 248687], "quick scan with quickTop = 1: round 1 Journeyman Ore, round 2 Apprentice Ore (it moved to the top), nothing else")
+    e = crate_entry(c, 248687)
+    ctx.eq((fnum(e.matCost), bool(e.est), fnum(e.perFavor)), (30 + 19 * 500, False, (600 + 9530 - 500) / 10.0), "Journeyman Ore, exact: 20 Iron Ore cost 9530")
+    e = crate_entry(c, 248683)
+    ctx.eq((fnum(e.crateCost), fnum(e.matCost), bool(e.est), fnum(e.perFavor)), (520, 600, False, (520 + 600 - 250) / 5.0), "Apprentice Ore, exact")
+    ctx.eq(fnum(e.opts[1].cost), 5 * 40 + 15 * 100, "Copper Ore x 20 by the order book: 1700, not 800")
+    t = c.texts()
+    ctx.check(not any(x.startswith("~") for x in t), "nothing shown is an estimate after the quick scan: %s" % [x for x in t if x.startswith("~")][:5])
+    # Auctionator scans again later: its newer prices replace Getrich's older exact ones, as estimates
+    c.advance(1800)
+    auctionator_update(c, {248683: 500, 2770: 40, 2771: 25, 248687: 600, 2772: 30, 2589: 10}, background=12000)
+    e = crate_entry(c, 248683)
+    ctx.eq((fnum(e.matCost), bool(e.est)), (500, True), "after a newer Auctionator scan: Tin 20 x 25, estimate again")
+    ctx.eq((fnum(e.opts[1].cost), bool(e.opts[1].est)), (1700, False), "Copper Ore: the newer scan shows the same cheapest price (40), the order book stays")
+    ctx.eq((fnum(e.crateCost), bool(e.crateEst)), (500, True), "the crate: 520 in the search, 500 in the newer scan -> the newer price, as an estimate")
+    e = crate_entry(c, 248687)
+    ctx.eq((fnum(e.matCost), bool(e.est)), (9530, False), "Journeyman Ore: crate 600 and Iron 30 confirmed by the newer scan, still exact")
+    c.close_ah()
+    ctx.eq(ext_state(c), (True, None), "still in use with the Auction House closed")
+    # quick scans off: everything is searched
+    db.quickScan = False
+    c.eval("local WC = ...; WC:Fire('SETTINGS_CHANGED', 'quickScan')", WC)
+    c.open_ah()
+    ctx.check(not WC.Scanner.IsQuick(), "quickScan off")
+    start_scan(c, "crates", 900)
+    ctx.check(len(lua_keys(db.results)) >= 120, "a full crate scan searches all crates and materials (%d results)" % len(lua_keys(db.results)))
+    c.close_ah()
+    # Auctionator's prices off: no estimates at all
+    db.useAuctionator = False
+    c.eval("local WC = ...; WC:Fire('SETTINGS_CHANGED', 'useAuctionator')", WC)
+    ctx.eq(ext_state(c), (False, "off"), "useAuctionator off")
+    ctx.eq(multi(c.eval("local WC = ...; return WC:CostBest(2589, 40)", WC), 2), (None, "none"), "Linen Cloth: from the full scan (not listed), not from Auctionator")
+    check_clean(ctx, c)
+
+
+@scenario("auctionator_limits", "2026.11.1: Auctionator's prices are used only from a whole-AH scan Getrich watched at this Auction House, for 12 hours; not from a search, another house, or an older day")
+def s_auctionator_limits(ctx):
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
+    WC = c.WC
+    db = c.g("GetrichDB")
+    db.autoScan = False
+    cost = lambda item, qty: multi(c.eval("local WC, i, q = ...; return WC:CostBest(i, q)", WC, item, qty), 4)
+    scan = {248683: 500, 2770: 40, 2771: 30, 248687: 600, 2772: 30, 2589: 10}
+    # an update with the Auction House closed is not a scan of any house
+    auctionator_update(c, scan, background=10000)
+    ctx.eq(ext_state(c), (False, "noscan"), "an update while no Auction House is open is not used")
+    c.eval("Auctionator.prices = {}")
+    n_chat = len(c.chat)
+    c.open_ah()
+    c.advance(2)
+    ctx.check(any("Auctionator" in str(m) for m in list(c.chat)[n_chat:]), "opening the Auction House says once that no Auctionator scan is in use yet: %s" % list(c.chat)[n_chat:])
+    # a search for one item, and a shopping list of crate materials: not whole-AH scans
+    auctionator_update(c, {2770: 40})
+    ctx.eq(ext_state(c), (False, "noscan"), "a search for one item is not a scan")
+    auctionator_update(c, {**scan, **{i: 77 for i in AUC_BACKGROUND_CRATE}})
+    ctx.eq(ext_state(c), (False, "noscan"), "14 crate items and no writ item: a shopping list, not a scan")
+    ctx.eq(cost(2770, 20)[1], None, "... no estimate")
+    # an item Auctionator saw yesterday, then a whole-AH scan that does not see it
+    auctionator_update(c, {2775: 300}, fire=False)
+    auctionator_new_day(c)
+    c.close_ah()
+    c.open_ah()
+    n_chat = len(c.chat)
+    auctionator_update(c, scan, background=10000)
+    ctx.eq(ext_state(c), (True, None), "a whole-AH scan")
+    ctx.eq(len([m for m in list(c.chat)[n_chat:] if "Auctionator" in str(m)]), 1, "... is announced once (three looks at one update)")
+    c.advance(15)
+    ctx.eq(len([m for m in list(c.chat)[n_chat:] if "Auctionator" in str(m)]), 1, "... also after the later looks")
+    t_scan = fnum(db.extScans[db.market].t)
+    ctx.eq(cost(2770, 20)[:2] + (cost(2770, 20)[3],), (800, "ok", True), "an estimate")
+    ctx.eq(cost(2775, 10)[:2], (None, "none"), "Silver Ore: last seen the day before the scan -> not for sale")
+    ctx.eq(cost(2776, 10)[:2], (None, "none"), "Gold Ore: never seen -> not for sale")
+    # the next day (within 12 hours): everything of the scan is one day older, and still in use
+    c.close_ah()
+    c.advance(10 * 3600)
+    auctionator_new_day(c)
+    ctx.eq(ext_state(c), (True, None), "10 hours later, on Auctionator's next day")
+    ctx.eq(cost(2770, 20)[:2], (800, "ok"), "the scan's price, now 1 day old in Auctionator's count")
+    ctx.eq(cost(2775, 10)[:2], (None, "none"), "Silver Ore: 2 days old, older than the scan")
+    # a search in Auctionator after the scan: the newer price of that item is used; it is not a new scan
+    c.open_ah()
+    auctionator_update(c, {2771: 22})
+    ctx.eq(fnum(db.extScans[db.market].t), t_scan, "a search does not move the scan time")
+    ctx.eq(cost(2771, 20)[:2], (440, "ok"), "Tin Ore at the price Auctionator saw in its search")
+    ctx.eq(cost(2770, 20)[:2], (800, "ok"), "Copper Ore still from the scan")
+    # a targeted search of Getrich that is newer than the scan wins
+    c.set_listings(2770, [(55, 100)])
+    db.quickScan = False
+    start_scan(c, "crates", 900)
+    ctx.eq(cost(2770, 20)[:2] + (cost(2770, 20)[3],), (1100, "ok", False), "Getrich's own newer search: exact")
+    c.close_ah()
+    # a neutral Auction House: Auctionator's database does not tell it apart, Getrich does
+    c.M.auctioneer = c.lua.table_from({"npcID": 8661, "name": "Auctioneer Beardo", "neutral": True})
+    c.open_ah()
+    ctx.eq(ext_state(c), (False, "noscan"), "the faction house's scan is not used at a neutral house")
+    ctx.eq(cost(2771, 20)[1], None, "neutral house: no estimate")
+    c.advance(600)
+    auctionator_update(c, {248683: 900, 2770: 80, 2771: 60, 248687: 990, 2772: 70, 2589: 20}, background=20000)
+    ctx.eq(ext_state(c), (True, None), "Auctionator scans the neutral house: used there")
+    ctx.eq(cost(2771, 20)[:2], (1200, "ok"), "neutral prices")
+    c.close_ah()
+    ctx.eq(ext_state(c), (False, "other"), "back at the faction house: Auctionator's database now holds the neutral scan")
+    ctx.check("Neutral" in str(c.eval("local WC = ...; return WC.External:Describe()", WC)), "/gr auc names the other house")
+    ctx.eq(cost(2770, 20)[:2] + (cost(2770, 20)[3],), (1100, "ok", False), "the faction house keeps Getrich's own search of Copper Ore")
+    ctx.eq(cost(2771, 20)[:2], (None, "none"), "... and of Tin Ore (not listed there)")
+    # more than 12 hours after the scan
+    c.M.auctioneer = c.lua.table_from({"npcID": 8719, "name": "Auctioneer Wabang", "neutral": False})
+    c.open_ah()
+    auctionator_update(c, scan, background=30000)
+    ctx.eq(ext_state(c), (True, None), "a new scan of the faction house")
+    c.close_ah()
+    c.advance(11 * 3600)
+    ctx.eq(ext_state(c), (True, None), "11 hours later: still in use")
+    c.advance(2 * 3600)
+    ctx.eq(ext_state(c), (False, "old"), "13 hours later: too old")
+    # "clear scan data" forgets the watched scans too
+    c.open_ah()
+    auctionator_update(c, scan, background=31000)
+    ctx.eq(ext_state(c), (True, None), "scanned again")
+    c.close_ah()
+    c.eval("local WC = ...; WC.Settings:Clear('scans')", WC)
+    ctx.eq(ext_state(c), (False, "noscan"), "Clear scans")
+    check_clean(ctx, c)
+
+
+@scenario("auctionator_watch", "2026.11.1: a whole-AH scan is recognised whether Auctionator tells after storing its prices, before, or several times while storing; a search just before it does not disturb")
+def s_auctionator_watch(ctx):
+    scan = {248683: 500, 2770: 40, 2771: 30, 248687: 600, 2772: 30, 2589: 10}
+    told = lambda c, n0: len([m for m in list(c.chat)[n0:] if str(c.WC.L.EXT_WATCHED) in str(m)])
+
+    def fresh():
+        c = ctx.client(login=False)
+        install_auctionator(c)
+        c.login()
+        c.g("GetrichDB").autoScan = False
+        c.open_ah()
+        c.advance(3)                      # past the hint of the first visit
+        return c, len(c.chat)
+
+    # 1. Auctionator tells first and stores afterwards
+    c, n0 = fresh()
+    c.eval("for _, fn in ipairs(Auctionator.callbacks) do fn() end")
+    ctx.eq(ext_state(c), (False, "noscan"), "told, nothing stored yet")
+    auctionator_update(c, scan, background=10000, fire=False)
+    c.advance(3)
+    ctx.eq(ext_state(c), (True, None), "stored a moment after telling: the second look sees the scan")
+    c.advance(20)
+    ctx.eq(told(c, n0), 1, "announced once")
+    check_clean(ctx, c, "tell first")
+
+    # 2. Auctionator tells several times while it stores
+    c, n0 = fresh()
+    auctionator_update(c, {248683: 500, 2770: 40, 2771: 30})
+    c.advance(1)
+    auctionator_update(c, {248687: 600, 2772: 30, 2589: 10})
+    ctx.eq(ext_state(c), (False, "noscan"), "half way: not a scan yet")
+    c.advance(1)
+    auctionator_update(c, {}, background=10000)
+    ctx.eq(ext_state(c), (True, None), "all stored: a scan, compared with what was known before the first call")
+    rec = c.g("GetrichDB").extScans[c.g("GetrichDB").market]
+    ctx.check(len(lua_list(rec.ids)) >= 10, "the crate items of the whole scan are noted, not only those of the last call (%d)" % len(lua_list(rec.ids)))
+    c.advance(20)
+    ctx.eq(told(c, n0), 1, "announced once")
+    check_clean(ctx, c, "several calls")
+
+    # 2b. Auctionator never tells (no update notice at all): the look every few seconds finds the scan
+    c, n0 = fresh()
+    c.eval("Auctionator.callbacks = {}")
+    auctionator_update(c, scan, background=10000)
+    ctx.eq(ext_state(c), (False, "noscan"), "stored without a notice: not seen yet")
+    c.advance(6)
+    ctx.eq(ext_state(c), (True, None), "... seen at the next look")
+    ctx.eq(told(c, n0), 1, "announced")
+    # ... and a scan that finishes in the last seconds before the window closes is seen when it closes
+    c.advance(600)
+    t_first = fnum(c.g("GetrichDB").extScans[c.g("GetrichDB").market].t)
+    auctionator_update(c, {k: v + 5 for k, v in scan.items()}, background=11000)
+    t_close = fnum(c.eval("return time()"))
+    c.close_ah()
+    ctx.check(t_close > t_first + 500, "(ten minutes after the first scan)")
+    ctx.eq(fnum(c.g("GetrichDB").extScans[c.g("GetrichDB").market].t), t_close, "a scan stored just before the Auction House closed is noted when it closes")
+    # nothing is looked at while the Auction House is closed
+    auctionator_update(c, {k: v + 9 for k, v in scan.items()}, background=12000)
+    c.advance(60)
+    ctx.eq(fnum(c.g("GetrichDB").extScans[c.g("GetrichDB").market].t), t_close, "changes while no Auction House is open are not a scan of it")
+    check_clean(ctx, c, "no notice")
+
+    # 3. a search in Auctionator, and right after it a whole scan
+    c, n0 = fresh()
+    auctionator_update(c, {2770: 41})
+    auctionator_update(c, scan, background=10000)
+    ctx.eq(ext_state(c), (True, None), "the scan after a search")
+    c.advance(20)
+    ctx.eq(told(c, n0), 1, "announced once: the looks left over from the search do nothing")
+    # 4. the same prices again a minute later (nothing changed): not a new scan, the time stays
+    t0 = fnum(c.g("GetrichDB").extScans[c.g("GetrichDB").market].t)
+    c.advance(60)
+    auctionator_update(c, scan, background=10000)
+    ctx.eq(fnum(c.g("GetrichDB").extScans[c.g("GetrichDB").market].t), t0, "an update that changes nothing is not noted as a scan")
+    # 5. a real rescan with moved prices is
+    c.advance(900)
+    auctionator_update(c, {k: v + 3 for k, v in scan.items()}, background=10500)
+    ctx.eq(fnum(c.g("GetrichDB").extScans[c.g("GetrichDB").market].t), t0 + 20 + 60 + 900, "a rescan with new prices moves the time")
+    c.advance(20)
+    ctx.eq(told(c, n0), 2, "announced")
+    check_clean(ctx, c, "search then scan")
+
+
+@scenario("auctionator_midscan", "2026.11.1: an Auctionator scan that finishes while Getrich is searching everything turns that scan into a quick one")
+def s_auctionator_midscan(ctx):
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
+    WC = c.WC
+    db = c.g("GetrichDB")
+    db.autoScan = False
+    db.quickTop = 1
+    c.set_listings(248683, [(500, 1)])
+    c.set_listings(2770, [(40, 5), (100, 100)])
+    c.set_listings(2771, [(30, 100)])
+    c.set_listings(248687, [(600, 2)])
+    c.set_listings(2772, [(30, 1), (500, 100)])
+    c.open_ah()
+    ctx.check(not WC.Scanner.IsQuick(), "no Auctionator scan yet: a full scan")
+    WC.Scanner.Start(WC.Scanner, "crates")
+    c.advance(6)
+    ctx.check(WC.Scanner.active and not WC.Scanner.quick, "searching everything")
+    n_before = len(lua_keys(db.results))
+    ctx.check(3 <= n_before <= 12, "a few items searched after 6 seconds (%d)" % n_before)
+    auctionator_update(c, {248683: 500, 2770: 40, 2771: 30, 248687: 600, 2772: 30, 2589: 10}, background=10000)
+    t0 = c.now()
+    c.advance(900, until=lambda: not WC.Scanner.active)
+    ctx.check(not WC.Scanner.active and WC.Scanner.quick, "the scan went on as a quick one and finished")
+    ctx.check(c.now() - t0 < 30, "... within seconds (%.0f s), not the two minutes of a full scan" % (c.now() - t0))
+    e = crate_entry(c, 248683)
+    ctx.eq((str(e.status), fnum(e.crateCost), fnum(e.matCost), bool(e.est)), ("ok", 500, 600, False), "Apprentice Ore: searched exactly")
+    e = crate_entry(c, 248687)
+    ctx.eq((fnum(e.matCost), bool(e.est)), (30 + 19 * 500, False), "Journeyman Ore (the best by estimate): searched exactly")
+    ctx.check(len(lua_keys(db.results)) < 20, "the other crates are left to Auctionator's prices (%d searched)" % len(lua_keys(db.results)))
+    ctx.check(db.scannedAt.crates is not None, "the scan counts as done")
+    check_clean(ctx, c)
+
+
+@scenario("market_ruleset", "2026.11.1: in Forever (regional unique names) the Auction House key is the ruleset, not the realm name; a 2026.11.0 database keyed by realm is renamed")
+def s_market_ruleset(ctx):
+    now = SERVER_TIME0
+    sv = ("GetrichDB = { resultsFormat = 3, market = 'Classic Beta PvP 2|Horde', "
+          "results = { [2770] = { status = 'listed', entries = { { 55, 100 } }, min = 55, avail = 100, time = %d } }, "
+          "markets = { ['Classic Beta PvP 2|Neutral'] = { results = { [2770] = { status = 'listed', entries = { { 90, 100 } }, min = 90, avail = 100, time = %d } } } } }") % (now, now)
+    c = ctx.client(sv=sv, login=False)
+    c.eval("""rawset(_G, "RegionalUniqueNamesEnabled", function() return true end)
+      rawset(Enum, "GameRule", { PvPRuleset = 101, RPRuleset = 102, HardcoreRuleset = 103 })
+      rawset(C_GameRules, "IsGameRuleActive", function(rule) return rule == 101 end)""")
+    c.login()
+    WC = c.WC
+    db = c.g("GetrichDB")
+    ctx.eq(str(first(c.eval("local WC = ...; return WC.Store.RulesetName()", WC))), "PvP", "ruleset")
+    ctx.eq(str(db.market), "Forever PvP|Horde", "market key by ruleset")
+    ctx.eq(fnum(db.results[2770].min), 55, "the prices keyed by realm name in 2026.11.0 are kept under the new key")
+    ctx.check(db.markets["Forever PvP|Horde"] is None and db.markets["Classic Beta PvP 2|Horde"] is None, "nothing parked under either Horde key")
+    c.M.auctioneer = c.lua.table_from({"npcID": 8661, "name": "Auctioneer Beardo", "neutral": True})
+    c.open_ah()
+    ctx.eq(str(db.market), "Forever PvP|Neutral", "neutral house key by ruleset")
+    ctx.eq(fnum(db.results[2770].min), 90, "the neutral prices of 2026.11.0 moved to the new key")
+    c.close_ah()
+    ctx.eq((str(db.market), fnum(db.results[2770].min)), ("Forever PvP|Horde", 55), "back at the faction house")
+    ctx.check(db.markets["Classic Beta PvP 2|Neutral"] is None, "old neutral key gone")
+    # RP + PvP, and no rule at all
+    c.eval("rawset(C_GameRules, 'IsGameRuleActive', function(rule) return rule == 101 or rule == 102 end)")
+    ctx.eq(str(first(c.eval("local WC = ...; return WC.Store.RulesetName()", WC))), "RPPvP", "RP-PvP ruleset")
+    c.eval("rawset(C_GameRules, 'IsGameRuleActive', function(rule) return rule == 103 end)")
+    ctx.eq(str(first(c.eval("local WC = ...; return WC.Store.RulesetName()", WC))), "HC", "Hardcore ruleset")
+    c.eval("rawset(C_GameRules, 'IsGameRuleActive', function(rule) return rule == 103 or rule == 101 end)")
+    ctx.eq(str(first(c.eval("local WC = ...; return WC.Store.RulesetName()", WC))), "HCPvP", "Hardcore with the PvP rule: not the same key as the PvP ruleset")
+    c.eval("rawset(C_GameRules, 'IsGameRuleActive', function(rule) return false end)")
+    ctx.eq(str(first(c.eval("local WC = ...; return WC.Store.RulesetName()", WC))), "PvE", "normal ruleset")
+    # realms as before (no regional unique names): the realm name is the key
+    c.eval("rawset(_G, 'RegionalUniqueNamesEnabled', function() return false end)")
+    ctx.eq(str(first(c.eval("local WC = ...; return WC.Store:MarketKey(false)", WC))), "Classic Beta PvP 2|Horde", "with realms: realm name + faction")
+    check_clean(ctx, c)
+
+    # After a session in which the ruleset could not be read, the database is keyed by realm again and the real
+    # prices are parked under the ruleset key. The next login with the ruleset must bring those back, not rename
+    # the realm-keyed leftovers over them.
+    sv = ("GetrichDB = { resultsFormat = 3, market = 'Classic Beta PvP 2|Horde', "
+          "results = { [2771] = { status = 'listed', entries = { { 7, 1 } }, min = 7, avail = 1, time = %d } }, "
+          "markets = { ['Forever PvP|Horde'] = { results = { [2770] = { status = 'listed', entries = { { 55, 100 } }, min = 55, avail = 100, time = %d } } } } }") % (now, now)
+    c = ctx.client(sv=sv, login=False)
+    c.eval("""rawset(_G, "RegionalUniqueNamesEnabled", function() return true end)
+      rawset(Enum, "GameRule", { PvPRuleset = 101, RPRuleset = 102, HardcoreRuleset = 103 })
+      rawset(C_GameRules, "IsGameRuleActive", function(rule) return rule == 101 end)""")
+    c.login()
+    db = c.g("GetrichDB")
+    ctx.eq(str(db.market), "Forever PvP|Horde", "ruleset key again")
+    ctx.check(db.results[2770] is not None and fnum(db.results[2770].min) == 55, "the prices parked under the ruleset key are loaded")
+    ctx.check(db.results[2771] is None, "the realm-keyed leftovers are not mixed in")
+    ctx.check(db.markets["Classic Beta PvP 2|Horde"] is not None, "... they are parked under the realm key")
+    check_clean(ctx, c, "ruleset unreadable for a session")
 
 
 # ===================================================================================================================

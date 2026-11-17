@@ -25,6 +25,12 @@ WC.AddLocale({
     SET_GENERAL = "General",
     SET_CHAT = "Print the best find in chat when a scan finishes",
     SET_CHAT_TIP = "One chat line with the best result of the scan.",
+    SET_AUC = "Use Auctionator's prices as estimates",
+    SET_AUC_TIP = "After Auctionator finishes a full scan of this Auction House (with Getrich loaded), its cheapest prices fill in, for 12 hours, what Getrich has not searched itself on the Crates and Writs tabs. Such numbers are marked ~: only the cheapest price is known, so a bundle can cost more. /gr auc tells whether they are in use.",
+    SET_QUICK = "Quick scans for crates and writs",
+    SET_QUICK_TIP = "With Auctionator's prices the lists are already ranked, so a scan only searches the best entries exactly (a few seconds instead of minutes). Off: every scan searches everything.",
+    SET_QUICKTOP = "Entries a quick scan checks",
+    SET_QUICKTOP_TIP = "How many of the best crates / writs a quick scan searches exactly.",
     SET_DOCK = "Put the window next to the Auction House",
     SET_DOCK_TIP = "When the Auction House opens, the Getrich window opens on its right side (unless you dragged it somewhere else).",
     SET_AHTINT = "Mark cheap listings in the Auction House",
@@ -102,6 +108,12 @@ WC.AddLocale({
     SET_GENERAL = "常规",
     SET_CHAT = "扫描完成时在聊天框显示最优结果",
     SET_CHAT_TIP = "在聊天框显示一行这次扫描的最优结果。",
+    SET_AUC = "用 Auctionator 的价格做估算",
+    SET_AUC_TIP = "Auctionator 在这个拍卖行完成一次全扫描后（当时 Getrich 已加载），12 小时内，箱子页和 Writ 页里 Getrich 没有亲自搜索过的物品先用它记录的最低价。这类数字前面带 ~：只知道最低价，整组购买可能更贵。输入 /gr auc 可以查看当前是否在用。",
+    SET_QUICK = "箱子和 Writ 用快速扫描",
+    SET_QUICK_TIP = "有 Auctionator 的价格时，列表已经排好名，扫描只精确搜索排在前面的几项（几秒钟，而不是一两分钟）。关闭后每次扫描都搜索全部。",
+    SET_QUICKTOP = "快速扫描核实几项",
+    SET_QUICKTOP_TIP = "快速扫描时，精确搜索排在最前面的几个箱子 / Writ。",
     SET_DOCK = "窗口贴在拍卖行旁边",
     SET_DOCK_TIP = "打开拍卖行时，Getrich 窗口出现在拍卖行右边（你拖动过窗口的话就留在原处）。",
     SET_AHTINT = "在拍卖行标出便宜的挂单",
@@ -179,6 +191,12 @@ WC.AddLocale({
     SET_GENERAL = "一般",
     SET_CHAT = "掃描完成時在聊天框顯示最佳結果",
     SET_CHAT_TIP = "在聊天框顯示一行這次掃描的最佳結果。",
+    SET_AUC = "用 Auctionator 的價格做估算",
+    SET_AUC_TIP = "Auctionator 在這個拍賣場完成一次全掃描後（當時 Getrich 已載入），12 小時內，箱子頁和 Writ 頁裡 Getrich 沒有親自搜尋過的物品先用它記錄的最低價。這類數字前面帶 ~：只知道最低價，整組購買可能更貴。輸入 /gr auc 可以查看目前是否在用。",
+    SET_QUICK = "箱子和 Writ 用快速掃描",
+    SET_QUICK_TIP = "有 Auctionator 的價格時，列表已經排好名，掃描只精確搜尋排在前面的幾項（幾秒鐘，而不是一兩分鐘）。關閉後每次掃描都搜尋全部。",
+    SET_QUICKTOP = "快速掃描核實幾項",
+    SET_QUICKTOP_TIP = "快速掃描時，精確搜尋排在最前面的幾個箱子 / Writ。",
     SET_DOCK = "視窗貼在拍賣場旁邊",
     SET_DOCK_TIP = "打開拍賣場時，Getrich 視窗出現在拍賣場右邊（你拖動過視窗的話就留在原處）。",
     SET_AHTINT = "在拍賣場標出便宜的掛單",
@@ -529,6 +547,9 @@ function S:Build()
   CheckRow("autoScan", L.AUTO_SCAN, L.AUTO_SCAN_TIP)
   CheckRow("soundOnDone", L.UI_SOUND, L.UI_SOUND_TIP)
   CheckRow("chatOnDone", L.SET_CHAT, L.SET_CHAT_TIP)
+  CheckRow("useAuctionator", L.SET_AUC, L.SET_AUC_TIP)
+  CheckRow("quickScan", L.SET_QUICK, L.SET_QUICK_TIP)
+  ChoiceRow("quickTop", L.SET_QUICKTOP, L.SET_QUICKTOP_TIP, { { 3, "3" }, { 5, "5" }, { 10, "10" }, { 20, "20" } })
   CheckRow("dockToAH", L.SET_DOCK, L.SET_DOCK_TIP)
   CheckRow("ahTint", L.SET_AHTINT, L.SET_AHTINT_TIP)
   CheckRow("profOverlay", L.SET_PROF, L.SET_PROF_TIP)
@@ -695,6 +716,8 @@ function S:Clear(what)
         if type(m) == "table" then m.results, m.browse, m.scannedAt = nil, nil, nil end
       end
     end
+    if type(db.extScans) == "table" then Wipe(db.extScans) end    -- and the Auctionator scans watched (External.lua)
+    if WC.External then WC.External:Invalidate() end
     WC:Fire("PRICES_UPDATED", "clear")
   elseif what == "de" then
     Wipe(db.deSamples)                     -- emptied in place: Disenchant.lua keeps a reference to it

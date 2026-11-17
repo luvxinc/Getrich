@@ -30,6 +30,7 @@ WC.AddLocale({
     SCAN_PH_CRATES = "crates and materials",
     SCAN_PH_WRITS = "Craftsman's Writs",
     SCAN_PH_WRIT_ITEMS = "requested items",
+    SCAN_PH_QUICK = "checking the best %d",
     SCAN_PH_BROWSE_ALL = "all listings",
     SCAN_PH_FLIP_CHECK = "checking cheap listings",
     SCAN_PH_DE_MATS = "enchanting materials",
@@ -52,6 +53,7 @@ WC.AddLocale({
     SCAN_PH_CRATES = "箱子和材料",
     SCAN_PH_WRITS = "Craftsman's Writ",
     SCAN_PH_WRIT_ITEMS = "需求物品",
+    SCAN_PH_QUICK = "核实排在前面的 %d 项",
     SCAN_PH_BROWSE_ALL = "全部拍卖",
     SCAN_PH_FLIP_CHECK = "核对低价物品",
     SCAN_PH_DE_MATS = "附魔材料",
@@ -74,6 +76,7 @@ WC.AddLocale({
     SCAN_PH_CRATES = "箱子和材料",
     SCAN_PH_WRITS = "Craftsman's Writ",
     SCAN_PH_WRIT_ITEMS = "需求物品",
+    SCAN_PH_QUICK = "核實排在前面的 %d 項",
     SCAN_PH_BROWSE_ALL = "全部拍賣",
     SCAN_PH_FLIP_CHECK = "核對低價物品",
     SCAN_PH_DE_MATS = "附魔材料",
@@ -354,7 +357,10 @@ function Scanner:Start(kind)
   self.startedAt = GetTime()
   self.listed, self.missing, self.browsed = 0, 0, nil
   self.searched = {}
-  self.phase, self.phaseCount = 0, #def.phases
+  self.goQuick = nil
+  self.phases = (def.quick and Scanner.IsQuick and Scanner.IsQuick()) and def.quick or def.phases
+  self.quick = (self.phases == def.quick)
+  self.phase, self.phaseCount = 0, #self.phases
   self.index, self.total = 0, 0
   self.current, self.browse, self.queue, self.wait = nil, nil, nil, nil
   local hasWork = self:AdvancePhase()
@@ -397,7 +403,7 @@ end
 function Scanner:AdvancePhase()
   while true do
     self.phase = self.phase + 1
-    local spec = self.def.phases[self.phase]
+    local spec = self.phases[self.phase]
     if not spec then return false end
     if self:PreparePhase(spec) then return true end
   end
@@ -451,7 +457,7 @@ function Scanner:PreparePhase(spec)
 end
 
 function Scanner:BeginPhase()
-  local spec = self.def.phases[self.phase]
+  local spec = self.phases[self.phase]
   UICall("OnScanPhase", self.kind, self.phase, self.phaseCount, Text(spec.label))
   if self.browse then
     self:BrowseTrySend()
@@ -524,6 +530,18 @@ function Scanner:Next()
   if not self.active then return end
   self:CancelTimer()
   self.token = self.token + 1
+  if self.goQuick then
+    self.goQuick = nil
+    if self.def and self.def.quick and not self.quick and Scanner.IsQuick() then
+      -- An Auctionator scan arrived during a full crate / writ scan: what is not searched yet is priced from it,
+      -- so the scan goes on as a quick one (everything may be asked for again: the top entries are searched now).
+      self.searched = {}
+      self.phases, self.quick = self.def.quick, true
+      self.phase, self.phaseCount = 0, #self.phases
+      self:PhaseDone()
+      return
+    end
+  end
   self.index = self.index + 1
   local cur = self.queue and self.queue[self.index]
   if not cur then
@@ -1009,18 +1027,86 @@ end)
 -- ---------------------------------------------------------------------------
 -- scan kinds owned by the scanner (craft is registered by Profit.lua)
 
+-- Quick scans. When External.lua has usable prices (a full Auctionator scan of this house, watched, < 12 h old) the
+-- crate and writ lists are already ranked from estimates, so a scan only searches what ranks at the top: the best
+-- quickTop entries, in up to three rounds because their exact prices can move other entries up. An item is searched
+-- once per scan (Scanner.searched), so a round whose entries were all searched has nothing to do and is skipped.
+-- Without such prices, or with the setting off, the scan searches everything as before. A kind that can do this
+-- has two phase lists, def.phases and def.quick; Scanner:Start picks one for the whole scan.
+local function Quick()
+  local X = WC.External
+  return WC:DB().quickScan ~= false and X ~= nil and X.Usable ~= nil and X:Usable()
+end
+Scanner.IsQuick = Quick
+
+local function QuickTop()
+  local n = tonumber(WC:DB().quickTop) or 5
+  if n < 1 or n > 50 then n = 5 end
+  return math.floor(n)
+end
+
+local function AllCrateItems()
+  local list = {}
+  for _, c in ipairs(WC.CRATES or {}) do
+    list[#list + 1] = c.id
+    for _, o in ipairs(c.opts) do list[#list + 1] = o[1] end
+  end
+  return list
+end
+
+-- the crate and every bundle material of the best ranked crates that are shown
+local function TopCrateItems()
+  local list, n, top = {}, 0, QuickTop()
+  for _, e in ipairs(WC:VisibleCrates(WC:EvaluateCrates())) do
+    if e.perFavor then
+      list[#list + 1] = e.crate.id
+      for _, o in ipairs(e.crate.opts) do list[#list + 1] = o[1] end
+      n = n + 1
+      if n >= top then break end
+    end
+  end
+  return list
+end
+
+-- the writ and the requested item of the best ranked writs that are shown
+local function TopWritItems()
+  local list, n, top = {}, 0, QuickTop()
+  for _, e in ipairs(WC:VisibleWrits(WC:EvaluateWrits())) do
+    if e.perRep and not e.receipt then
+      list[#list + 1] = e.writ.writ
+      list[#list + 1] = e.writ.item
+      n = n + 1
+      if n >= top then break end
+    end
+  end
+  return list
+end
+
+local function QuickLabel()
+  return L.SCAN_PH_QUICK:format(QuickTop())
+end
+
+-- External.lua watched an Auctionator scan finish: a full crate / writ scan that is running switches to quick
+-- before its next item (Scanner:Next)
+WC:On("EXTERNAL_SCAN", function()
+  if Scanner.active and Scanner.def and Scanner.def.quick and not Scanner.quick then Scanner.goQuick = true end
+end)
+
 Scanner:RegisterKind("crates", {
   label = function() return L.SCAN_KIND_CRATES end,
   phases = {
-    { type = "search", label = function() return L.SCAN_PH_CRATES end,
+    { type = "search", label = function() return L.SCAN_PH_CRATES end, items = AllCrateItems },
+  },
+  -- quick: three rounds of the best entries; the first looks at everything if nothing ranks from the estimates
+  quick = {
+    { type = "search", label = QuickLabel,
       items = function()
-        local list = {}
-        for _, c in ipairs(WC.CRATES or {}) do
-          list[#list + 1] = c.id
-          for _, o in ipairs(c.opts) do list[#list + 1] = o[1] end
-        end
-        return list
+        local list = TopCrateItems()
+        if #list > 0 then return list end
+        return AllCrateItems()
       end },
+    { type = "search", label = QuickLabel, items = TopCrateItems },
+    { type = "search", label = QuickLabel, items = TopCrateItems },
   },
 })
 
@@ -1043,6 +1129,17 @@ Scanner:RegisterKind("writs", {
         end
         return list
       end },
+  },
+  quick = {
+    { type = "search", label = QuickLabel,
+      items = function()
+        local list = TopWritItems()
+        if #list > 0 then return list end
+        for _, w in ipairs(WC.WRITS or {}) do list[#list + 1] = w.writ end
+        return list
+      end },
+    { type = "search", label = QuickLabel, items = TopWritItems },
+    { type = "search", label = QuickLabel, items = TopWritItems },
   },
 })
 

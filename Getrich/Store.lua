@@ -16,7 +16,9 @@ local addonName, WC = ...
 --   watch     = { [itemID] = true },
 --   vendorObs = {}  (Merchant.lua)   recipes = {}, chars = {}  (Recipes.lua)   deSamples = {}  (Disenchant.lua)
 --   crateObs  = { [questID] = { n = turn-ins seen, f = { last Favor gains, at most 5 }, money = copper } }  (Core.lua)
---   market    = "<realm>|<Alliance / Horde / Neutral>": the Auction House the price tables above belong to
+--   extScans  = { [marketKey] = { t = time, ids = { itemID, ... } } }   Auctionator scans watched (External.lua)
+--   market    = "Forever <ruleset>|<Alliance / Horde / Neutral>" (a client with realms: "<realm>|..."): the Auction
+--               House the price tables above belong to
 --   markets   = { [marketKey] = { results, scannedAt, browse, history } }   price tables of the other houses
 -- }
 -- Forever has one Auction House per ruleset and faction, and separate neutral houses. results, scannedAt, browse
@@ -50,7 +52,8 @@ Store.DEFAULTS = {
 local DEFAULTS = Store.DEFAULTS
 
 -- tables every DB has (owners noted in the header)
-local TABLES = { "results", "scannedAt", "history", "watch", "vendorObs", "recipes", "chars", "deSamples", "crateObs" }
+local TABLES = { "results", "scannedAt", "history", "watch", "vendorObs", "recipes", "chars", "deSamples", "crateObs",
+                 "extScans" }
 
 -- the price tables of one Auction House (see the header)
 local MARKET_TABLES = { "results", "scannedAt", "history", "browse" }
@@ -133,14 +136,41 @@ end
 -- ---------------------------------------------------------------------------
 -- markets: one set of price tables per Auction House
 
--- Key of an Auction House for this character: realm name (in Forever the ruleset's realm) + faction, or + "Neutral"
--- for a neutral house. nil while the game can't say yet.
-function Store:MarketKey(neutral)
+-- Forever has no realms to choose: RegionalUniqueNamesEnabled() is true, GetRealmName() is an internal realm of
+-- the ruleset ("CAMWOW US1 Realm 4 PvP") and every such realm of one ruleset shares its Auction Houses. The ruleset
+-- is read from the game rules, as documented for this client (warcraft.wiki.gg, "Patch 1.60.1/API changes",
+-- Rulesets): C_GameRules.IsGameRuleActive(Enum.GameRule.HardcoreRuleset / RPRuleset / PvPRuleset), none = PvE.
+-- Every active rule goes into the name ("HC", "RP", "PvP", "HCPvP", ...), so two rulesets never share a key
+-- whichever of the rules a ruleset combines.
+local function RulesetName()
+  local ok, name = pcall(function()
+    if type(RegionalUniqueNamesEnabled) ~= "function" or not RegionalUniqueNamesEnabled() then return nil end
+    local rule = Enum and Enum.GameRule
+    if not (rule and C_GameRules and C_GameRules.IsGameRuleActive) then return nil end
+    if rule.PvPRuleset == nil and rule.RPRuleset == nil then return nil end      -- names unknown: don't guess
+    local function on(r) return r ~= nil and C_GameRules.IsGameRuleActive(r) and true or false end
+    local s = (on(rule.HardcoreRuleset) and "HC" or "") .. (on(rule.RPRuleset) and "RP" or "")
+              .. (on(rule.PvPRuleset) and "PvP" or "")
+    if s == "" then s = "PvE" end
+    return s
+  end)
+  if ok and type(name) == "string" then return name end
+  return nil
+end
+Store.RulesetName = RulesetName
+
+-- Key of an Auction House for this character: ruleset (Forever) or realm name, + faction, or + "Neutral" for a
+-- neutral house. nil while the game can't say yet. byRealm = true gives the key 2026.11.0 used (always the realm).
+function Store:MarketKey(neutral, byRealm)
   local realm, faction
   pcall(function()
     realm = GetRealmName and GetRealmName()
     faction = UnitFactionGroup and UnitFactionGroup("player")
   end)
+  if not byRealm then
+    local ruleset = RulesetName()
+    if ruleset then realm = "Forever " .. ruleset end
+  end
   if type(realm) ~= "string" or realm == "" then return nil end
   if neutral then faction = "Neutral" end
   if faction ~= "Alliance" and faction ~= "Horde" and faction ~= "Neutral" then return nil end
@@ -153,6 +183,17 @@ function Store:UseMarket(key)
   local db = GetrichDB
   if type(db) ~= "table" or type(key) ~= "string" then return false end
   if db.market == nil then db.market = key; return false end
+  -- 2026.11.0 keyed the houses by realm name: the same house under its new key. (Not when prices are already
+  -- parked under the new key, e.g. after a session in which the ruleset could not be read: those are the real ones,
+  -- and the ordinary swap below brings them back.)
+  local faction = key:match("|(%a+)$")
+  local old = self:MarketKey(faction == "Neutral", true)
+  if old and old ~= key then
+    if db.market == old and not (type(db.markets) == "table" and db.markets[key] ~= nil) then db.market = key end
+    if type(db.markets) == "table" and db.markets[old] ~= nil and db.markets[key] == nil and db.market ~= key then
+      db.markets[key], db.markets[old] = db.markets[old], nil
+    end
+  end
   if db.market == key then return false end
   if type(db.markets) ~= "table" then db.markets = {} end
   local park = {}
@@ -379,9 +420,22 @@ function WC:CostFor(itemID, qty)
 end
 
 -- the targeted result if it should be used (exists, has an answer, not older than the browse entry)
-local function PickSearch(itemID)
+-- ext = true: Auctionator's price of the item (External.lua) counts like a browse row; the newer of the two is used
+local function PickSearch(itemID, ext)
   local res = Results()[itemID]
   local b = WC:DB().browse.items[itemID]
+  local X = ext and WC.External
+  if X and X.Row then
+    local x = X:Row(itemID)
+    if x and (not b or (x.t or 0) > (b.t or 0)) then
+      -- A newer Auctionator scan that shows the same cheapest price (or also nothing) confirms what the search
+      -- found: the order book stays. Only a different price means the market has moved on.
+      if res and ((res.status == "listed" and x.min and x.min == res.min) or (res.status == "none" and x.none)) then
+        return res, nil
+      end
+      b = x
+    end
+  end
   if res and res.status == "timeout" and b then res = nil end   -- no answer: the browse snapshot knows more
   if res and (not b or (res.time or 0) >= (b.t or 0)) then return res, nil end
   return nil, b
@@ -390,10 +444,12 @@ end
 -- Cost of `qty` items from the best data we have: the targeted order book, or else the browse snapshot
 -- (cheapest price x qty, status "est" because the price of the deeper listings is unknown).
 -- status: "ok" | "short" | "est" | "none" | "timeout" | nil (no data)
--- info = { unit, time, source = "search"|"browse", avail }
-function WC:CostForAny(itemID, qty)
+-- info = { unit, time, source = "search"|"browse"|"auctionator", avail, est = true when not from a targeted search }
+-- ext = true (only WC:CostBest, for the crate and writ tabs): also use a watched Auctionator scan (External.lua).
+-- The other tabs price everything from Getrich's own searches and whole-AH reads, as before.
+function WC:CostForAny(itemID, qty, ext)
   qty = qty or 1
-  local res, b = PickSearch(itemID)
+  local res, b = PickSearch(itemID, ext)
   if res then
     local cost, status = WC:CostFor(itemID, qty)
     local info = { time = res.time, source = "search", avail = res.avail }
@@ -415,12 +471,32 @@ function WC:CostForAny(itemID, qty)
     return cost, status, info
   end
   if b and b.min then
-    local info = { unit = b.min, time = b.t, source = "browse", avail = b.qty }
+    local info = { unit = b.min, time = b.t, source = b.ext or "browse", avail = b.qty, est = true }
     -- the browse row does tell how many are listed in total
     if b.qty and b.qty < qty then return nil, "short", info end
     return b.min * qty, "est", info
   end
+  if b and b.none then     -- the Auctionator scan in use did not see the item
+    return nil, "none", { time = b.t, source = b.ext, est = true }
+  end
   return nil, nil, nil
+end
+
+-- Cost of `qty` items for the crate and writ tabs: WC:CostForAny in the shape of WC:CostFor, plus an estimate flag.
+-- Returns cost, status ("ok" | "short" | "none" | "timeout" | nil), res, est.
+--   est = true: the answer is not from a targeted search of this item (Auctionator or the browse snapshot: only the
+--   cheapest price is known, so a bundle can cost more; "none" then means "not seen in that scan").
+--   res = the targeted result, or for an estimate { min, avail, time, est = true, source }.
+function WC:CostBest(itemID, qty)
+  local cost, status, info = WC:CostForAny(itemID, qty, true)
+  if status == nil then return nil, nil, nil, false end
+  if info and info.source == "search" then
+    local est = (status == "est")            -- priced past the kept listings
+    return cost, est and "ok" or status, Results()[itemID], est
+  end
+  local res = { min = info and info.unit, avail = info and info.avail, time = info and info.time, est = true,
+                source = info and info.source }
+  return cost, (status == "est") and "ok" or status, res, true
 end
 
 -- cheapest unit price, time, source ("search"|"browse"); nil if not listed / unknown
