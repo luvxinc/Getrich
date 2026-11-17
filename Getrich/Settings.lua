@@ -554,6 +554,13 @@ function S:Build()
   CheckRow("hideDone", L.HIDE_DONE, L.HIDE_DONE_TIP)
   ChoiceRow("diplomatRank", L.DIPLO_LABEL, FirstLine(L.DIPLO_TIP),
     { { 0, "0" }, { 1, "1" }, { 2, "2" }, { 3, "3" }, { 4, "4" }, { 5, "5" } })
+  -- the reputation plan (UIWrits.lua has the strings)
+  local function Standing(r) return _G["FACTION_STANDING_LABEL" .. r] or tostring(r) end
+  ChoiceRow("repTarget", L.WRIT_VIEW_PLAN .. ": " .. L.REP_TARGET, L.REP_TARGET_TIP,
+    { { "next", L.REP_TARGET_ANY }, { 6, Standing(6) }, { 7, Standing(7) }, { 8, Standing(8) } })
+  ChoiceRow("repCap", L.WRIT_VIEW_PLAN .. ": " .. L.REP_CAP, L.REP_CAP_TIP,
+    { { 0, L.REP_CAP_NONE }, { 100, Money(100) }, { 200, Money(200) }, { 300, Money(300) }, { 500, Money(500) }, { 1000, Money(1000) } })
+  CheckRow("repUseFavor", L.WRIT_VIEW_PLAN .. ": " .. L.REP_FAVOR, L.REP_FAVOR_TIP)
 
   Header(L.UI_TAB_FLIPS)
   ChoiceRow("flipMinProfit", L.SET_FLIP_MIN, L.SET_FLIP_MIN_TIP,

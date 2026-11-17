@@ -2442,7 +2442,11 @@ C_DateAndTime = NS("C_DateAndTime", {
   GetCurrentCalendarTime = function() local d = os.date("!*t", GetServerTime())
     return { year = d.year, month = d.month, monthDay = d.day, weekday = d.wday, hour = d.hour, minute = d.min } end,
   GetServerTimeLocal = function() return GetServerTime() end,
-  GetSecondsUntilDailyReset = function() return 3600 * 5 end,
+  -- the daily reset of this mock: 15:00 UTC (US realms reset at 15:00 UTC)
+  GetSecondsUntilDailyReset = function()
+    local t = GetServerTime()
+    return (math.floor((t - 15 * 3600) / 86400) + 1) * 86400 + 15 * 3600 - t
+  end,
 })
 C_AddOns = NS("C_AddOns", {
   GetAddOnMetadata = function(name, field)
@@ -2460,10 +2464,22 @@ C_AddOns = NS("C_AddOns", {
   GetAddOnEnableState = function() return 2 end,
 })
 MOCK.addonMeta, MOCK.lodLoaders = {}, {}
+-- Standard reputation scale: a standing starts at REACTION_START[reaction] (Neutral 0, Friendly 3000, Honored 9000,
+-- Revered 21000, Exalted 42000 up to 42999). FactionData: currentStanding is the reputation earned on that scale,
+-- currentReactionThreshold / nextReactionThreshold bracket it (Blizzard's ReputationFrame draws its bar from them).
+local REACTION_START = { [1] = -42000, [2] = -6000, [3] = -3000, [4] = 0, [5] = 3000, [6] = 9000, [7] = 21000, [8] = 42000, [9] = 43000 }
 C_Reputation = NS("C_Reputation", {
   GetFactionDataByID = function(id)
     local f = MOCK.factions[id]; if not f then return nil end
-    return { factionID = id, name = f.name, reaction = f.reaction, currentStanding = f.standing or 0, currentReactionThreshold = 0, nextReactionThreshold = 3000, isWatched = false }
+    local standing = f.standing
+    local reaction = f.reaction
+    if standing == nil then standing = REACTION_START[reaction or 4] end      -- (a test that only sets the reaction)
+    reaction = 1
+    for r = 1, 8 do if standing >= REACTION_START[r] then reaction = r end end
+    return { factionID = id, name = f.name, description = "", reaction = reaction, currentStanding = standing,
+             currentReactionThreshold = REACTION_START[reaction], nextReactionThreshold = REACTION_START[reaction + 1],
+             atWarWith = false, canToggleAtWar = false, isChild = false, isHeader = false, isHeaderWithRep = false,
+             isCollapsed = false, isWatched = false, hasBonusRepGain = false, canSetInactive = true, isAccountWide = false }
   end,
 })
 MOCK.factions = { [2587] = { name = "Durotar Supply and Logistics", reaction = 5 }, [2586] = { name = "Azeroth Commerce Authority", reaction = 5 } }
@@ -2490,8 +2506,9 @@ C_PlayerInteractionManager = NS("C_PlayerInteractionManager", { IsInteractingWit
 C_SkillInfo = NS("C_SkillInfo", { GetSkillLineInfoByID = function(id)
   for _, p in ipairs(MOCK.profs) do if p.skillLine == id then return { skillID = id, name = p.name, rank = p.rank, maxRank = p.max, isHeader = false } end end
 end })
+MOCK.currencies = {}
 C_CurrencyInfo = NS("C_CurrencyInfo", { GetCoinTextureString = function(m) return GetMoneyString(m) end,
-  GetCurrencyInfo = function(id) return { name = "Currency " .. id, quantity = 0, iconFileID = 0 } end })
+  GetCurrencyInfo = function(id) return { name = "Currency " .. id, quantity = MOCK.currencies[id] or 0, iconFileID = 0 } end })
 
 -- ------------------------------------------------------------------------------------- items
 MOCK.ITEMS = MOCK.ITEMS or {}
@@ -4261,6 +4278,26 @@ class WowClient:
 
     def complete_quest(self, quest_id):
         self.M.questsDone[quest_id] = True
+
+    def turn_in(self, quest_id, money=0):
+        """Hand a quest in: the game flags it completed and fires QUEST_TURNED_IN(questID, xp, money)."""
+        self.M.questsDone[quest_id] = True
+        self.fire("QUEST_TURNED_IN", quest_id, 0, money)
+
+    def daily_reset(self):
+        """The daily reset: the completed flags of daily quests (the Craftsman's Writs, 94004-94360) are cleared."""
+        self.eval("for q in pairs(__WOWMOCK.questsDone) do if q >= 94000 and q <= 94400 then __WOWMOCK.questsDone[q] = nil end end")
+
+    def set_reputation(self, standing, faction_id=None):
+        """Reputation earned with the crate faction of the character (or faction_id), on the standard scale."""
+        for fid in ([faction_id] if faction_id else [2586, 2587]):
+            self.M.factions[fid].standing = standing
+            self.M.factions[fid].reaction = None
+        self.fire("UPDATE_FACTION")
+
+    def set_currency(self, currency_id, quantity):
+        self.M.currencies[currency_id] = quantity
+        self.fire("CURRENCY_DISPLAY_UPDATE", currency_id, quantity, 0, 0, 0)
 
     # ------------------------------------------------------------------ UI driving
     def slash(self, text):

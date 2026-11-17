@@ -8,6 +8,7 @@ local addonName, WC = ...
 --   GetAuctionPriceByItemID(callerID, itemID) -> the last scanned unit price (the cheapest listing), or nil
 --   GetAuctionAgeByItemID(callerID, itemID)   -> whole days since it last saw the item, or nil
 --   RegisterForDBUpdate(callerID, fn)         -> fn() when its price database has been updated
+--   CreateShoppingList / ConvertToSearchString -> a shopping list in Auctionator (X:ShoppingList, at the end)
 --
 -- What that API does not tell, and what Getrich does about it:
 --   * Whether an item is still for sale: the last price of an item that sold out stays. Auctionator's full scan
@@ -382,6 +383,40 @@ local function Look(final)
   end
   WC:Fire("PRICES_UPDATED", "external")
   if first then WC:Fire("EXTERNAL_SCAN") end
+end
+
+-- Auctionator's shopping lists, through its add-on API as well:
+--   CreateShoppingList(callerID, listName, searchStrings)                  a named list of search terms the player
+--                                                                          runs on Auctionator's Shopping tab
+--   ConvertToSearchString(callerID, { searchString, isExact, quantity })   the term for one exact item name
+-- items = { { itemID, qty }, ... }. Returns true, the list's name, the number of entries; or false and why:
+--   "noapi" (no Auctionator, or one without shopping lists), "empty", "error",
+--   "names" + how many item names the client has not loaded yet (they are asked for; try again in a moment).
+function X:ShoppingList(listName, items)
+  local A = rawget(_G, "Auctionator")
+  local v1 = type(A) == "table" and type(A.API) == "table" and A.API.v1 or nil
+  if type(v1) ~= "table" or type(v1.CreateShoppingList) ~= "function" then return false, "noapi" end
+  if type(items) ~= "table" or #items == 0 then return false, "empty" end
+  local terms, missing = {}, 0
+  for _, it in ipairs(items) do
+    local itemID, qty = it[1], tonumber(it[2]) or 1
+    local name = C_Item and C_Item.GetItemNameByID and C_Item.GetItemNameByID(itemID) or nil
+    if type(name) ~= "string" or name == "" then
+      missing = missing + 1
+      WC.RequestItem(itemID)
+    else
+      local term = name
+      if type(v1.ConvertToSearchString) == "function" then
+        local ok, str = pcall(v1.ConvertToSearchString, X.caller, { searchString = name, isExact = true, quantity = qty })
+        if ok and type(str) == "string" and str ~= "" then term = str end
+      end
+      terms[#terms + 1] = term
+    end
+  end
+  if missing > 0 then return false, "names", missing end
+  local ok = pcall(v1.CreateShoppingList, X.caller, listName, terms)
+  if not ok then return false, "error" end
+  return true, listName, #terms
 end
 
 local function SafeLook(final)

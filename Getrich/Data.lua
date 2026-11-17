@@ -223,5 +223,6 @@ WC.REP = {
   labelRep = 2000,
   labelFavor = 50,
 }
+WC.LABEL_QUESTS = { 98247, 98248 }           -- "Shipping Label", the one-time first crate (2000 reputation)
 WC.DIPLOMACY_SPELL = 20599
 WC.FACTION_IDS = { Alliance = 2586, Horde = 2587 }   -- Azeroth Commerce Authority / Durotar Supply and Logistics (Wowhead)

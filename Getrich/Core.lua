@@ -78,31 +78,103 @@ function WC:FavorBonus()
   return 0.05 * (tonumber(WC:DB().perfRank) or 0)
 end
 
--- current standing with the crate faction, if the client exposes it
+-- Current standing with the crate faction, if the client exposes it: name, reaction (4 Neutral, 5 Friendly,
+-- 6 Honored, 7 Revered, 8 Exalted), reputation earned so far, and where this standing starts and ends.
+-- (FactionData fields: Blizzard_APIDocumentationGenerated/ReputationInfoDocumentation.lua; the reputation frame
+-- draws its bar from currentReactionThreshold, nextReactionThreshold and currentStanding.)
 function WC:Standing()
   local id = WC.FACTION_IDS[UnitFactionGroup and UnitFactionGroup("player") or ""]
   if not id then return nil end
-  local ok, name, reaction = pcall(function()
+  local ok, name, reaction, value, lo, hi = pcall(function()
     if C_Reputation and C_Reputation.GetFactionDataByID then
       local d = C_Reputation.GetFactionDataByID(id)
-      if d then return d.name, d.reaction end
+      if d then return d.name, d.reaction, d.currentStanding, d.currentReactionThreshold, d.nextReactionThreshold end
     elseif GetFactionInfoByID then
-      local n, _, standingID = GetFactionInfoByID(id)
-      return n, standingID
+      local n, _, standingID, barMin, barMax, barValue = GetFactionInfoByID(id)
+      return n, standingID, barValue, barMin, barMax
     end
   end)
-  if ok and name and reaction then return name, reaction end
+  if ok and name and reaction then return name, reaction, tonumber(value), tonumber(lo), tonumber(hi) end
   return nil
 end
 
--- has this writ been turned in today? (writs are once a day)
+local function ServerNow()
+  if WC.Store and WC.Store.ServerNow then return WC.Store.ServerNow() end
+  return (GetServerTime and GetServerTime()) or time()
+end
+
+-- ---------------------------------------------------------------------------
+-- writs turned in today
+-- Each writ can be handed in once a day. The game flags its quest as completed until the daily reset
+-- (C_QuestLog.IsQuestFlaggedCompleted). Getrich also writes down the turn-ins it sees:
+--   GetrichDB.writLog[charKey] = { reset = server time of the daily reset that ends this day, done = { [questID] = time } }
+-- A writ counts as done today when either says so. The record is dropped once its reset has passed; without the
+-- client's reset time (C_DateAndTime.GetSecondsUntilDailyReset) nothing is written down and only the flag counts.
+
+local function NextDailyReset(now)
+  local ok, secs = pcall(function()
+    return C_DateAndTime and C_DateAndTime.GetSecondsUntilDailyReset and C_DateAndTime.GetSecondsUntilDailyReset()
+  end)
+  if ok and type(secs) == "number" and secs > 0 and secs <= 86400 + 3600 then return now + secs end
+  return nil
+end
+
+-- today's record of this character (create = true: start one); nil when there is none
+function WC:WritLog(create)
+  local db = GetrichDB
+  if type(db) ~= "table" then return nil end
+  if type(db.writLog) ~= "table" then
+    if not create then return nil end
+    db.writLog = {}
+  end
+  local key = WC:CharKey()
+  local now = ServerNow()
+  local log = db.writLog[key]
+  if log ~= nil and (type(log) ~= "table" or type(log.reset) ~= "number" or type(log.done) ~= "table" or now >= log.reset) then
+    db.writLog[key] = nil
+    log = nil
+  end
+  if not log and create then
+    local reset = NextDailyReset(now)
+    if not reset then return nil end
+    log = { reset = reset, done = {} }
+    db.writLog[key] = log
+  end
+  return log
+end
+
+local writByQuest
+local function WritOfQuest(questID)
+  if not writByQuest then
+    writByQuest = {}
+    for _, w in ipairs(WC.WRITS) do writByQuest[w.quest] = w end
+  end
+  return writByQuest[questID]
+end
+
+-- has this writ been turned in today? (the game's flag, or Getrich's own record of today)
 function WC:WritDoneToday(questID)
   local ok, done = pcall(function()
     if C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted then return C_QuestLog.IsQuestFlaggedCompleted(questID) end
     if IsQuestFlaggedCompleted then return IsQuestFlaggedCompleted(questID) end
     return false
   end)
-  return (ok and done) and true or false
+  if ok and done then return true end
+  local log = WC:WritLog()
+  return (log and log.done[questID]) and true or false
+end
+
+-- how many writs were turned in today, and the reputation they gave (with the bonus set now)
+function WC:WritsToday()
+  local n, rep = 0, 0
+  local mult = 1 + WC:RepBonus()
+  for _, w in ipairs(WC.WRITS) do
+    if WC:WritDoneToday(w.quest) then
+      n = n + 1
+      rep = rep + w.rep * mult
+    end
+  end
+  return n, rep
 end
 
 -- ---------------------------------------------------------------------------
@@ -168,7 +240,13 @@ local function IsSealedQuest(questID)
 end
 
 function WC:OnQuestTurnedIn(questID, _, money)
-  if type(questID) ~= "number" or not IsSealedQuest(questID) then return end
+  if type(questID) ~= "number" then return end
+  if WritOfQuest(questID) then           -- a Craftsman's Writ: done for today
+    local log = WC:WritLog(true)
+    if log then log.done[questID] = ServerNow() end
+    return
+  end
+  if not IsSealedQuest(questID) then return end
   lastTurnIn = { quest = questID, money = type(money) == "number" and money or 0, t = GetTime() }
   MatchCrateReward()
 end
@@ -347,6 +425,349 @@ function WC:VisibleWrits(list)
 end
 
 -- ---------------------------------------------------------------------------
+-- reputation plan: from the reputation the character has to a target standing, for the least money
+--
+-- What can be handed in today:
+--   * every Craftsman's Writ that was not turned in today, once (the writ + the item it asks for). What is already
+--     in the bags is not bought: an owned writ costs nothing, and of the requested item only the missing part is
+--     priced (WC:CostBest for that quantity: order book if the item was checked, else Auctionator's price).
+--   * the empty crate with a Forged Delivery Receipt (needs Friendly), as often as the receipts in the bags and
+--     the Merchant's Favor owned allow (15 Favor a receipt). Its cost is the crate (owned crates first, then the
+--     cheapest listings) plus the Favor at what it costs to make (WC:BestPerFavor); only the crate is money.
+-- All of them give multiples of 25 reputation (75 / 125 / 200 for writs, 50 for a crate return; the bonus
+-- multiplies them alike), and within one kind the cheapest come first, so the cheapest combination is found by
+-- trying every count of each kind: at most 46 x 61 x 46 combinations, each a sum of four prefix sums.
+-- A writ or crate return that costs more per reputation than the cap (repCap, copper; 0 = no cap) is left out.
+
+WC.REP_START = { [5] = 3000, [6] = 9000, [7] = 21000, [8] = 42000 }   -- reputation at which a standing starts
+WC.RECEIPT_ITEM = 262902                                                -- Forged Delivery Receipt
+local REP_UNIT = 25
+
+-- standings the plan can aim at (above the current one): { reaction, ... }
+function WC:RepTargets()
+  local _, reaction = WC:Standing()
+  local out = {}
+  for r = math.max(5, (tonumber(reaction) or 4) + 1), 8 do out[#out + 1] = r end
+  return out
+end
+
+local function BagCount(itemID)
+  local n = WC.BagCount and WC.BagCount(itemID) or 0
+  return (type(n) == "number" and n > 0) and n or 0
+end
+
+local function FavorOwned()
+  local ok, q = pcall(function()
+    local info = C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo and C_CurrencyInfo.GetCurrencyInfo(WC.FAVOR_CURRENCY)
+    return info and info.quantity
+  end)
+  return (ok and type(q) == "number" and q > 0) and q or 0
+end
+
+-- The crates on the Auction House, cheapest first: { { price, qty (math.huge when only Auctionator's price is
+-- known), id, est }, ... }
+local function CrateOffers()
+  local offers = {}
+  for _, c in ipairs(WC.CRATES) do
+    local cost, _, res, est = WC:CostBest(c.id, 1)
+    if cost then
+      if est or type(res) ~= "table" or type(res.entries) ~= "table" then
+        offers[#offers + 1] = { cost, math.huge, c.id, true }
+      else
+        for _, e in ipairs(res.entries) do offers[#offers + 1] = { e[1], e[2], c.id, false } end
+      end
+    end
+  end
+  table.sort(offers, function(a, b)
+    if a[1] ~= b[1] then return a[1] < b[1] end
+    return a[3] < b[3]
+  end)
+  return offers
+end
+
+local function ByCost(a, b)
+  if a.cost ~= b.cost then return a.cost < b.cost end
+  return a.key < b.key
+end
+
+-- prefix sums of a list of steps' costs: pre[0] = 0, pre[i] = cost of the cheapest i
+local function Prefix(list)
+  local pre = { [0] = 0 }
+  for i = 1, #list do pre[i] = pre[i - 1] + list[i].cost end
+  return pre
+end
+
+local repGen, planCache = 0, nil
+function WC:RepChanged()
+  repGen = repGen + 1
+end
+
+-- The plan (a shared cache: read it, never change it):
+--   { why = nil | "top" (nothing above the current standing),
+--     reaction, value (assumed = true: the game shows no reputation yet, taken as Neutral 0),
+--     target (reaction aimed at), targetRep, need (reputation missing),
+--     steps = { entry, ... } what to hand in today, cheapest reputation first. A writ entry looks like one of
+--       WC:EvaluateWrits (writ, writCost, itemCost, cost, repGain, perRep, est, status = "ok") with plan = true,
+--       haveWrit, haveQty / buyQty (of the requested item), writRes / itemRes (prices of what is bought);
+--       the crate-return entry: receipt = true, n (times), buyCrates, haveCrates, haveReceipts, favor (spent),
+--       crate (cheapest type), cash, cost, repGain, perRep, est, cashEst (the crate prices are estimates),
+--     rep (gained by the steps), cash (money to spend), cost (cash + the Favor's worth), favor (Favor spent),
+--     cashEst (some price to pay is an estimate), est (that, or the Favor's worth is one),
+--     reached (the steps reach the target), short (reputation still missing),
+--     doneN / doneRep (turned in today), open (writs that could still be handed in today, at any price),
+--     daily = { n, rep, cost } what all writs for sale give in a day at today's prices (under the cap),
+--     days (more days needed for `short` at that rate; nil when unknown),
+--     shop = { { itemID, qty, cost, est, kind = "writ"|"item"|"crate" }, ... } everything to buy,
+--     items = { itemID, ... } the same items, for the check button (which asks with fresh = true),
+--     labelOpen (the one-time Shipping Label quest, +2000, is not done yet) }
+function WC:RepPlan(fresh)
+  local db = WC:DB()
+  local now = GetTime()
+  local bucket = math.floor(now / 30)
+  if planCache and planCache.gen == repGen and planCache.bucket == bucket then return planCache.plan end
+  -- while a check stores prices (several times a second) the plan on screen may be up to a second behind;
+  -- the check itself asks for a fresh one (fresh = true)
+  if not fresh and planCache and WC.Scanner and WC.Scanner.active and now - planCache.at < 1 then return planCache.plan end
+  local plan = { steps = {}, shop = {}, items = {}, rep = 0, cash = 0, cost = 0, favor = 0, est = false, cashEst = false }
+  planCache = { gen = repGen, bucket = bucket, plan = plan, at = now }
+
+  local mult = 1 + WC:RepBonus()
+  plan.doneN, plan.doneRep = WC:WritsToday()
+  local _, reaction, value, _, hi = WC:Standing()
+  if not reaction or not value then
+    -- the game shows no reputation with the faction yet (nothing handed in so far): Neutral, at 0
+    reaction, value, hi = 4, 0, WC.REP_START[5]
+    plan.assumed = true
+  end
+  plan.reaction, plan.value = reaction, value
+  local targets = WC:RepTargets()
+  if #targets == 0 then
+    plan.why = "top"
+    return plan
+  end
+  local target = tonumber(db.repTarget)
+  local known = false
+  for _, r in ipairs(targets) do if r == target then known = true end end
+  if not known then target = targets[1] end            -- "next", or a standing already reached
+  plan.target = target
+  -- the next standing starts where the game says this one ends; the others at the usual thresholds
+  plan.targetRep = (target == reaction + 1 and hi and hi > value) and hi or WC.REP_START[target]
+  plan.need = math.max(0, plan.targetRep - value)
+  local cap = tonumber(db.repCap) or 0
+
+  -- the one-time first crate ("Shipping Label")
+  local labelDone = false
+  for _, q in ipairs(WC.LABEL_QUESTS or {}) do
+    if WC:WritDoneToday(q) then labelDone = true end
+  end
+  plan.labelOpen = not labelDone
+
+  -- writs: what handing each in costs today
+  local tiers, tierOf = {}, {}
+  local daily = { n = 0, rep = 0, cost = 0 }
+  local open = 0
+  for i, w in ipairs(WC.WRITS) do
+    local done = WC:WritDoneToday(w.quest)
+    local gain = w.rep * mult
+    -- a day at today's prices, bought in full (the bags are for today only)
+    local fullWrit = WC:CostBest(w.writ, 1)
+    local fullItem = WC:CostBest(w.item, w.qty)
+    if fullWrit and fullItem and (cap <= 0 or (fullWrit + fullItem) / gain <= cap) then
+      daily.n, daily.rep, daily.cost = daily.n + 1, daily.rep + gain, daily.cost + fullWrit + fullItem
+    end
+    if not done then
+      local haveWrit = BagCount(w.writ) > 0
+      local haveQty = math.min(BagCount(w.item), w.qty)
+      local buyQty = w.qty - haveQty
+      local writCost, writRes, writEst = 0, nil, false
+      if not haveWrit then
+        local c, _, res, est = WC:CostBest(w.writ, 1)
+        writCost, writRes, writEst = c, res, est
+      end
+      local itemCost, itemRes, itemEst = 0, nil, false
+      if buyQty > 0 then
+        local c, _, res, est = WC:CostBest(w.item, buyQty)
+        itemCost, itemRes, itemEst = c, res, est
+      end
+      if writCost and itemCost then
+        open = open + 1
+        local cost = writCost + itemCost
+        if cap <= 0 or cost / gain <= cap then
+          local e = { writ = w, key = i, plan = true, status = "ok", haveWrit = haveWrit, haveQty = haveQty, buyQty = buyQty,
+                      writCost = writCost, writRes = writRes, writEst = writEst and true or false,
+                      itemCost = itemCost, itemRes = itemRes, itemEst = itemEst and true or false,
+                      cost = cost, cash = cost, repGain = gain, perRep = cost / gain,
+                      est = (writEst or itemEst) and true or false }
+          e.cashEst = e.est
+          local t = tierOf[w.rep]
+          if not t then
+            t = { units = w.rep / REP_UNIT, list = {} }
+            tierOf[w.rep] = t
+            tiers[#tiers + 1] = t
+          end
+          t.list[#t.list + 1] = e
+        end
+      end
+    end
+  end
+  plan.open, plan.daily = open, daily
+  table.sort(tiers, function(a, b) return a.units < b.units end)
+  for _, t in ipairs(tiers) do
+    table.sort(t.list, ByCost)
+    t.pre = Prefix(t.list)
+  end
+
+  -- crate returns
+  local returns = { units = WC.REP.empty / REP_UNIT, list = {} }
+  local haveReceipts, haveCrates, favorOwned = BagCount(WC.RECEIPT_ITEM), 0, FavorOwned()
+  local offers, perFavor, favorEst
+  if db.repUseFavor ~= false and reaction >= 5 then
+    for _, c in ipairs(WC.CRATES) do haveCrates = haveCrates + BagCount(c.id) end
+    offers = CrateOffers()
+    perFavor, favorEst = WC:BestPerFavor()
+    local maxUses = haveReceipts + math.floor(favorOwned / WC.REP.receiptFavor)
+    local gain = WC.REP.empty * mult
+    local oi, left = 1, offers[1] and offers[1][2] or 0
+    for j = 1, maxUses do
+      local step = { key = j, cash = 0, favor = 0, est = false, cashEst = false }
+      if j > haveCrates then                                    -- a crate to buy
+        while offers[oi] and left <= 0 do
+          oi = oi + 1
+          left = offers[oi] and offers[oi][2] or 0
+        end
+        local o = offers[oi]
+        if not o then break end                                  -- no more crates for sale
+        left = left - 1
+        step.cash, step.crateID, step.est, step.cashEst = o[1], o[3], o[4], o[4]
+      end
+      local cost = step.cash
+      if j > haveReceipts then                                   -- a receipt to buy with Favor
+        step.favor = WC.REP.receiptFavor
+        cost = cost + step.favor * (perFavor or 0)
+        if favorEst or not perFavor then step.est = true end
+      end
+      step.cost = cost
+      if cap > 0 and cost / gain > cap then break end            -- (costs only go up from here)
+      returns.list[#returns.list + 1] = step
+    end
+  end
+  returns.pre = Prefix(returns.list)
+
+  -- the cheapest combination that reaches the target: counts of each kind
+  local U = math.ceil(plan.need / (REP_UNIT * mult) - 1e-9)
+  local t1, t2, t3 = tiers[1], tiers[2], tiers[3]
+  local n1, n2, n3 = t1 and #t1.list or 0, t2 and #t2.list or 0, t3 and #t3.list or 0
+  local u1, u2, u3 = t1 and t1.units or 0, t2 and t2.units or 0, t3 and t3.units or 0
+  local p1, p2, p3 = t1 and t1.pre or { [0] = 0 }, t2 and t2.pre or { [0] = 0 }, t3 and t3.pre or { [0] = 0 }
+  local nr, ur, pr = #returns.list, returns.units, returns.pre
+  local best
+  if U > n1 * u1 + n2 * u2 + n3 * u3 + nr * ur then
+    best = { a = n1, b = n2, c = n3, r = nr }                    -- not reachable today: everything there is
+  elseif U > 0 then
+    for a = 0, n1 do
+      local ua = a * u1
+      for b = 0, n2 do
+        local ub = ua + b * u2
+        for c = 0, n3 do
+          local rem = U - ub - c * u3
+          local r = rem > 0 and math.ceil(rem / ur) or 0
+          if r <= nr then
+            local cost = p1[a] + p2[b] + p3[c] + pr[r]
+            local count = a + b + c + r
+            if not best or cost < best.cost - 1e-6 or (cost < best.cost + 1e-6 and count < best.count) then
+              best = { a = a, b = b, c = c, r = r, cost = cost, count = count }
+            end
+          end
+          if rem <= 0 then break end                             -- one more of this kind only costs more
+        end
+        if ub >= U then break end
+      end
+      if ua >= U then break end
+    end
+    if not best then best = { a = n1, b = n2, c = n3, r = nr } end
+  else
+    best = { a = 0, b = 0, c = 0, r = 0 }
+  end
+
+  -- the steps
+  local steps = plan.steps
+  local function Take(t, n)
+    for i = 1, n do steps[#steps + 1] = t.list[i] end
+  end
+  if t1 then Take(t1, best.a) end
+  if t2 then Take(t2, best.b) end
+  if t3 then Take(t3, best.c) end
+  local shopCrates = {}
+  if best.r > 0 then
+    local e = { receipt = true, plan = true, key = 0, status = "ok", n = best.r, cash = 0, cost = 0, favor = 0, est = false,
+                cashEst = false,
+                haveCrates = math.min(haveCrates, best.r), haveReceipts = math.min(haveReceipts, best.r),
+                repGain = best.r * WC.REP.empty * mult, perFavor = perFavor }
+    e.buyCrates = best.r - e.haveCrates
+    for j = 1, best.r do
+      local st = returns.list[j]
+      e.cash, e.cost, e.favor = e.cash + st.cash, e.cost + st.cost, e.favor + st.favor
+      if st.est then e.est = true end
+      if st.cashEst then e.cashEst = true end
+      if st.crateID then
+        local sc = shopCrates[st.crateID]
+        if not sc then
+          sc = { itemID = st.crateID, qty = 0, cost = 0, est = false, kind = "crate" }
+          shopCrates[st.crateID] = sc
+        end
+        sc.qty, sc.cost = sc.qty + 1, sc.cost + st.cash
+        if st.cashEst then sc.est = true end
+        if not e.crate then e.crateID = st.crateID end
+      end
+    end
+    for _, c in ipairs(WC.CRATES) do
+      if c.id == e.crateID or (not e.crateID and not e.crate and BagCount(c.id) > 0) then e.crate = c end
+    end
+    e.crate = e.crate or WC.CRATES[1]
+    e.perRep = e.cost / e.repGain
+    e.writCost, e.itemCost = e.cash, e.cost - e.cash            -- the two price columns: crates, the Favor's worth
+    steps[#steps + 1] = e
+  end
+  table.sort(steps, function(x, y)
+    if x.perRep ~= y.perRep then return x.perRep < y.perRep end
+    return x.key < y.key
+  end)
+
+  -- totals and the shopping list
+  local shop, items = plan.shop, plan.items
+  for rank, e in ipairs(steps) do
+    e.rank, e.score = rank, e.perRep
+    plan.rep, plan.cash, plan.cost = plan.rep + e.repGain, plan.cash + e.cash, plan.cost + e.cost
+    if e.est then plan.est = true end
+    if e.cashEst then plan.cashEst = true end
+    if e.receipt then
+      plan.favor = plan.favor + e.favor
+    else
+      local w = e.writ
+      if not e.haveWrit then
+        shop[#shop + 1] = { itemID = w.writ, qty = 1, cost = e.writCost, est = e.writEst, kind = "writ" }
+      end
+      if e.buyQty > 0 then
+        shop[#shop + 1] = { itemID = w.item, qty = e.buyQty, cost = e.itemCost, est = e.itemEst, kind = "item" }
+      end
+    end
+  end
+  for _, c in ipairs(WC.CRATES) do
+    if shopCrates[c.id] then shop[#shop + 1] = shopCrates[c.id] end
+  end
+  for _, x in ipairs(shop) do items[#items + 1] = x.itemID end
+  plan.reached = plan.rep >= plan.need - 1e-6
+  plan.short = plan.reached and 0 or (plan.need - plan.rep)
+  if plan.short > 0 and daily.rep > 0 then plan.days = math.ceil(plan.short / daily.rep - 1e-9) end
+  return plan
+end
+
+WC:On("PRICES_UPDATED", function() repGen = repGen + 1 end)
+WC:On("BAGS_UPDATED", function() repGen = repGen + 1 end)
+WC:On("SETTINGS_CHANGED", function() repGen = repGen + 1 end)
+WC:On("DB_READY", function() repGen = repGen + 1 end)
+
+-- ---------------------------------------------------------------------------
 -- events (the Scanner registers its own Auction House result events)
 
 local frame = CreateFrame("Frame")
@@ -442,12 +863,14 @@ frame:SetScript("OnEvent", function(_, event, ...)
     if WC.neutralAH then UseMarket(false) end      -- away from the auctioneer, show the faction house again
     WC.UI:OnAuctionHouseClosed()
   elseif event == "CURRENCY_DISPLAY_UPDATE" then
+    WC:RepChanged()
     local ok, err = pcall(WC.OnCurrencyUpdate, WC, ...)
     if not ok then ReportError("crate reward", err) end
   elseif event == "PLAYER_LEVEL_UP" or event == "QUEST_TURNED_IN" or event == "UPDATE_FACTION" then
+    WC:RepChanged()
     if event == "QUEST_TURNED_IN" then
       local ok, err = pcall(WC.OnQuestTurnedIn, WC, ...)
-      if not ok then ReportError("crate reward", err) end
+      if not ok then ReportError("quest turned in", err) end
     end
     C_Timer.After(0.5, function() WC.UI:Refresh() end)
   end

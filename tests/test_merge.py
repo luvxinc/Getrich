@@ -221,7 +221,9 @@ def visible_tab_texts(c):
 # ---- a stand-in for Auctionator: the only source of prices since 2026.11.2 ----------------------------------------
 def install_auctionator(c):
     """Auctionator's add-on API (Auctionator.API.v1). Auctionator.prices[itemID] = { cheapest unit price, age in days }.
-    Installed before login when Getrich should be told about updates (RegisterForDBUpdate), else any time."""
+    Installed before login when Getrich should be told about updates (RegisterForDBUpdate), else any time.
+    Shopping lists: Auctionator.lists[name] = { term, ... }; a term made by ConvertToSearchString is this stand-in's
+    own "name|exact|quantity" (Getrich passes terms on without looking inside)."""
     c.eval("""
       if rawget(_G, "Auctionator") then return end
       local A = { API = { v1 = {} }, callbacks = {}, prices = {}, calls = 0 }
@@ -232,6 +234,18 @@ def install_auctionator(c):
       function A.API.v1.GetAuctionPriceByItemID(callerID, itemID) check(callerID); local p = A.prices[itemID]; return p and p[1] or nil end
       function A.API.v1.GetAuctionAgeByItemID(callerID, itemID) check(callerID); local p = A.prices[itemID]; return p and p[2] or nil end
       function A.API.v1.RegisterForDBUpdate(callerID, fn) check(callerID); A.callbacks[#A.callbacks + 1] = fn end
+      A.lists = {}
+      function A.API.v1.ConvertToSearchString(callerID, term)
+        check(callerID)
+        if type(term) ~= "table" or type(term.searchString) ~= "string" then error("ConvertToSearchString: bad search term") end
+        return term.searchString .. "|" .. (term.isExact and "exact" or "") .. "|" .. tostring(term.quantity or "")
+      end
+      function A.API.v1.CreateShoppingList(callerID, listName, searchStrings)
+        check(callerID)
+        if type(listName) ~= "string" or type(searchStrings) ~= "table" then error("CreateShoppingList: usage") end
+        for _, t in ipairs(searchStrings) do if type(t) ~= "string" then error("CreateShoppingList: search strings must be strings") end end
+        A.lists[listName] = searchStrings
+      end
       rawset(_G, "Auctionator", A)""")
 
 
@@ -1878,6 +1892,7 @@ SETTING_DEFAULTS = {   # SPEC2 5: every adjustable parameter and its default
     "uiScale": 1.0, "dockToAH": True, "quickTop": 5,
     "onlyMine": False, "hideNoCrate": True, "hideNoMats": True, "perfRank": 0,
     "hideNoWrit": True, "hideNoItem": True, "hideDone": True, "diplomatRank": 0,
+    "repTarget": "next", "repCap": 0, "repUseFavor": True,
     "flipMinProfit": 0, "flipShowGone": False, "flipCandidates": 80,
     "craftOnlyProfit": False, "craftHideMissing": False, "craftShowUnlearned": False, "levelOffset": "best3", "levelTarget": "max",
     "deSource": "all", "deHideSkill": False, "deHideLoss": False, "deMeasuredCasts": 20,
@@ -1887,7 +1902,7 @@ SETTING_CHOICES = {    # option lists the page must offer (SPEC2 5)
     "flipMinProfit": {0, 1000, 10000, 50000}, "flipCandidates": {40, 80, 150}, "deMeasuredCasts": {10, 20, 30, 50},
     "historyDays": {7, 14, 30, 60, 90}, "pruneDays": {3, 7, 14, 30}, "levelOffset": {"best3", "npcde", "none"},
     "levelTarget": {"max", 225, 300}, "perfRank": {0, 1, 2, 3}, "diplomatRank": {0, 1, 2, 3, 4, 5},
-    "quickTop": {3, 5, 10, 20},
+    "quickTop": {3, 5, 10, 20}, "repTarget": {"next", 6, 7, 8}, "repCap": {0, 100, 200, 300, 500, 1000},
 }
 
 
@@ -3574,6 +3589,439 @@ def s_upgrade_11_1(ctx):
     text = c.logout_sv()
     for word in ("browse", "autoScan", "useAuctionator", "quickScan"):
         ctx.check(word not in text, "the saved data still contains '%s'" % word)
+    check_clean(ctx, c)
+
+
+# ===================================================================================================================
+# 2026.11.3: writs turned in today, reputation plan
+# ===================================================================================================================
+FAVOR = 3402          # Merchant's Favor (currency)
+RECEIPT = 262902      # Forged Delivery Receipt
+
+
+def writ_of(c, writ_id):
+    return [w for w in lua_list(c.WC.WRITS) if int(w.writ) == writ_id][0]
+
+
+def rep_plan(c):
+    """Today's reputation plan, freshly computed, as a dict (steps: list of dicts)."""
+    p = c.eval("local WC = ...; WC:RepChanged(); return WC:RepPlan()", c.WC)
+    steps = []
+    for e in lua_list(p.steps):
+        if e.receipt:
+            steps.append({"receipt": True, "n": int(e.n), "cash": fnum(e.cash), "cost": fnum(e.cost), "favor": int(e.favor),
+                          "rep": fnum(e.repGain), "buyCrates": int(e.buyCrates), "haveCrates": int(e.haveCrates),
+                          "haveReceipts": int(e.haveReceipts), "est": bool(e.est)})
+        else:
+            steps.append({"writ": int(e.writ.writ), "cost": fnum(e.cost), "rep": fnum(e.repGain), "writCost": fnum(e.writCost),
+                          "itemCost": fnum(e.itemCost), "haveWrit": bool(e.haveWrit), "haveQty": int(e.haveQty),
+                          "buyQty": int(e.buyQty), "est": bool(e.est)})
+    return {"why": p.why, "reaction": p.reaction, "value": fnum(p.value), "target": p.target, "targetRep": fnum(p.targetRep),
+            "need": fnum(p.need), "steps": steps, "rep": fnum(p.rep), "cash": fnum(p.cash), "cost": fnum(p.cost),
+            "favor": int(p.favor), "est": bool(p.est), "cashEst": bool(p.cashEst), "reached": bool(p.reached),
+            "short": fnum(p.short), "days": p.days,
+            "doneN": int(p.doneN), "doneRep": fnum(p.doneRep), "open": p.open, "assumed": bool(p.assumed),
+            "daily": (int(p.daily.n), fnum(p.daily.rep), fnum(p.daily.cost)) if p.daily is not None else None,
+            "shop": [(int(x.itemID), int(x.qty), fnum(x.cost), str(x.kind)) for x in lua_list(p.shop)],
+            "items": [int(x) for x in lua_list(p["items"])], "labelOpen": bool(p.labelOpen)}
+
+
+def st_items(c):
+    """Items Getrich's own scanner searched so far (Blizzard's own searches, e.g. after a click on a name, not counted)."""
+    return [int(x) for x in lua_keys(c.eval("local WC = ...; local t = {} for id in pairs(WC.Scanner.searched or {}) do t[id] = true end return t", c.WC))]
+
+
+def plan_view(c, on=True):
+    c.g("GetrichDB").writView = "plan" if on else "list"
+    c.WC.Fire(c.WC, "SETTINGS_CHANGED", "writView")
+    c.slash("/gr writs")
+    c.advance(0.5)
+
+
+@scenario("writs_daily", "2026.11.3: a writ handed in today is known from the game's flag or from Getrich's own record (kept until the daily reset, per character); the tab hides it and counts today's turn-ins")
+def s_writs_daily(ctx):
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
+    WC = c.WC
+    setup_market_130(c)
+    c.eval("__WOWMOCK.questsDone[94213] = nil")        # (the 1.3.0 market has one writ done: start clean)
+    auctionator_scan_ah(c, fire=False)
+    done = lambda q: bool(WC.WritDoneToday(WC, q))
+    today = lambda: tuple(fnum(x) for x in multi(c.eval("local WC = ...; return WC:WritsToday()", WC), 2))
+    vis = lambda: {int(e.writ.writ) for e in lua_list(c.eval("local WC = ...; return WC:VisibleWrits(WC:EvaluateWrits())", WC)) if not e.receipt}
+    ctx.eq(today(), (0, 0), "nothing handed in yet")
+    ctx.check(264072 in vis() and 264085 in vis(), "the listed writs are shown")
+    # 1. handed in: the game flags the quest and fires QUEST_TURNED_IN
+    c.turn_in(94272)                                    # Blue Glittering Axe (125)
+    c.advance(1)
+    ctx.check(done(94272), "a writ handed in is done for today")
+    ctx.eq(today(), (1, 125), "today's count and reputation")
+    ctx.check(264072 not in vis(), "a writ done today is hidden by default")
+    log = c.g("GetrichDB").writLog[WC.CharKey(WC)]
+    ctx.check(log is not None and log.done[94272] is not None, "Getrich wrote the turn-in down")
+    reset = int(log.reset)
+    ctx.check(0 < reset - c.server_time() <= 86400, "the record ends at the daily reset (in %d s)" % (reset - c.server_time()))
+    # 2. the record alone is enough (the flag is not there, e.g. the client has not caught up)
+    c.fire("QUEST_TURNED_IN", 94285, 0, 0)              # Unstable Trigger (125): event only, no flag
+    c.advance(1)
+    ctx.check(done(94285) and 264085 not in vis(), "a turn-in Getrich saw counts without the game's flag")
+    ctx.eq(today(), (2, 250), "two today")
+    # 3. the flag alone is enough (handed in while Getrich was not loaded)
+    c.complete_quest(94324)                             # Distilled Firewater (200)
+    ctx.check(done(94324), "the game's flag counts without a record")
+    ctx.eq(today(), (3, 450), "three today")
+    # other quests are not writs
+    c.turn_in(91902, 1250)
+    ctx.eq(len(lua_keys(c.g("GetrichDB").writLog[WC.CharKey(WC)].done)), 2, "only writs are written down")
+    # the tab: done writs with the filter off, and today's count next to the standing
+    c.g("GetrichDB").hideDone = False
+    c.slash("/gr writs")
+    c.advance(1)
+    t = c.texts()
+    ctx.check(any(str(WC.L.DONE_TODAY) in x for x in t), "with the filter off a done writ is marked 'done today'")
+    ctx.check(any((str(WC.L.REP_DONE_TODAY) % (3, "450")) in x for x in t), "today's turn-ins next to the standing: %s" % [x for x in t if "450" in x or "tanding" in x][:3])
+    c.g("GetrichDB").hideDone = True
+    # 4. logging out and in the same day: the record is still there (the flags are the game's)
+    text = c.logout_sv()
+    c2 = ctx.client(sv=text, login=False, server_time=c.server_time() + 600)
+    c2.login()
+    ctx.check(bool(c2.WC.WritDoneToday(c2.WC, 94272)) and bool(c2.WC.WritDoneToday(c2.WC, 94285)), "the record survives a relog on the same day")
+    ctx.check(not bool(c2.WC.WritDoneToday(c2.WC, 94324)), "(a new client: the game's flags are its own)")
+    # 5. after the daily reset: nothing is done any more, the record is dropped
+    c3 = ctx.client(sv=text, login=False, server_time=reset + 60)
+    c3.login()
+    ctx.check(not bool(c3.WC.WritDoneToday(c3.WC, 94272)) and not bool(c3.WC.WritDoneToday(c3.WC, 94285)), "after the daily reset the writs are open again")
+    ctx.eq(c3.g("GetrichDB").writLog[c3.WC.CharKey(c3.WC)], None, "the old record is dropped")
+    # ... also in a session that runs across the reset
+    c.daily_reset()
+    c.set_server_time(reset + 5)
+    ctx.check(not done(94272) and not done(94285) and not done(94324), "across the reset in one session")
+    ctx.eq(today(), (0, 0), "a new day")
+    # 6. another character has its own day
+    c4 = ctx.client(sv=text, char=SECOND_CHAR, login=False, server_time=reset - 3600)
+    c4.login()
+    ctx.check(not bool(c4.WC.WritDoneToday(c4.WC, 94272)), "the record is per character")
+    # 7. a client without the daily reset time: nothing is written down, the flag still counts
+    c5 = ctx.client(login=False)
+    c5.eval("rawset(C_DateAndTime, 'GetSecondsUntilDailyReset', nil)")
+    c5.login()
+    c5.fire("QUEST_TURNED_IN", 94272, 0, 0)
+    ctx.check(not bool(c5.WC.WritDoneToday(c5.WC, 94272)), "without a reset time no record is kept")
+    c5.complete_quest(94272)
+    ctx.check(bool(c5.WC.WritDoneToday(c5.WC, 94272)), "... and the flag still counts")
+    for cl, what in ((c, ""), (c2, "relog"), (c3, "after reset"), (c4, "other character"), (c5, "no reset time")):
+        check_clean(ctx, cl, what)
+
+
+def plan_market(c, writs):
+    """An Auction House with only these writs: {writ item ID: (writ price, item unit price)}; plenty listed."""
+    c.clear_listings()
+    for wid, (wp, ip) in writs.items():
+        w = writ_of(c, wid)
+        c.set_listings(wid, [(wp, 5)])
+        c.set_listings(int(w.item), [(ip, 5000)])
+
+
+@scenario("rep_plan_cheapest", "2026.11.3: the reputation plan is the cheapest set of today's turn-ins that reaches the target (checked against trying every subset); cap, days after today, standings")
+def s_rep_plan(ctx):
+    import itertools
+    import random
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
+    WC = c.WC
+    db = c.g("GetrichDB")
+    db.repUseFavor = False
+    all_writs = lua_list(WC.WRITS)
+    rng = random.Random(20261116)
+    # 13 writs of all three sizes for sale at random prices
+    pick = rng.sample([w for w in all_writs if int(w.qty) == 1], 13)
+    market = {int(w.writ): (rng.randrange(200, 9000), rng.randrange(100, 30000)) for w in pick}
+    plan_market(c, market)
+    auctionator_scan_ah(c, fire=False)
+    cand = [(int(w.writ), market[int(w.writ)][0] + market[int(w.writ)][1], int(w.rep)) for w in pick]
+
+    def brute(need):
+        best = None
+        for k in range(len(cand) + 1):
+            for sub in itertools.combinations(cand, k):
+                rep = sum(x[2] for x in sub)
+                if rep >= need:
+                    cost = sum(x[1] for x in sub)
+                    if best is None or cost < best:
+                        best = cost
+        return best
+
+    total_rep = sum(x[2] for x in cand)
+    # standing and target: Friendly 3000-9000; reputation values that leave different amounts to go
+    for value in (8990, 8930, 8875, 8800, 8520, 8301, 7777, 7400):
+        c.set_reputation(value)
+        p = rep_plan(c)
+        need = 9000 - value
+        ctx.eq((p["reaction"], p["target"], p["targetRep"], p["need"]), (5, 6, 9000, need), "Friendly %d -> Honored" % value)
+        want = brute(need)
+        ctx.require(want is not None, "(the market can cover %d)" % need)
+        ctx.eq(p["cost"], want, "cheapest cost for %d reputation (every subset tried)" % need)
+        ctx.check(p["reached"] and p["rep"] >= need and p["short"] == 0, "the plan reaches the target: %s of %s" % (p["rep"], need))
+        ctx.eq(p["cash"], p["cost"], "writs only: all of the cost is money")
+        ctx.eq(sorted(p["items"]), sorted(i for (i, _, _, _) in p["shop"]), "the check list is the shopping list")
+    # the classic trap: the best price per reputation is not the cheapest way to cover a small gap.
+    # 75 for 100c (1.33 / rep), 125 for 150c (1.2), 200 for 220c (1.1): 80 to go -> the 125 one (150c), not the 200 one
+    w75 = [w for w in all_writs if int(w.rep) == 75 and int(w.qty) == 1][0]
+    w125 = [w for w in all_writs if int(w.rep) == 125][0]
+    w200 = [w for w in all_writs if int(w.rep) == 200][0]
+    plan_market(c, {int(w75.writ): (40, 60), int(w125.writ): (50, 100), int(w200.writ): (20, 200)})
+    auctionator_new_day(c)                      # (the writs of the first market were seen yesterday: sold out)
+    auctionator_scan_ah(c, fire=False, background=510000)
+    c.set_reputation(8920)
+    p = rep_plan(c)
+    ctx.eq([(x["writ"], x["cost"]) for x in p["steps"]], [(int(w125.writ), 150.0)], "80 to go: the 125 writ for 150c beats the 200 writ at the best rate")
+    c.set_reputation(8930)
+    ctx.eq([(x["writ"], x["cost"]) for x in rep_plan(c)["steps"]], [(int(w75.writ), 100.0)], "70 to go: the 75 writ for 100c")
+    c.set_reputation(8700)
+    p = rep_plan(c)
+    ctx.eq(sorted(x["writ"] for x in p["steps"]), sorted([int(w125.writ), int(w200.writ)]), "300 to go: 125 + 200 for 370c (not all three for 470c)")
+    ctx.eq(p["cost"], 370.0, "... 370c")
+    ctx.eq([x["writ"] for x in p["steps"]], [int(w200.writ), int(w125.writ)], "the rows are in order of cost per reputation")
+    # not reachable today: everything there is, and an estimate for the days after
+    c.set_reputation(3000)
+    p = rep_plan(c)
+    ctx.eq((len(p["steps"]), p["rep"], p["reached"], p["short"]), (3, 400.0, False, 5600.0), "6000 to go with 400 for sale: all of it, 5600 short")
+    ctx.eq((p["daily"], p["days"]), ((3, 400.0, 470.0), 14), "a day gives 400 for 470c -> 14 more days")
+    # the price cap: 1.2c per reputation leaves the 75 writ (1.33) out
+    db.repCap = 1.2
+    p = rep_plan(c)
+    ctx.eq(sorted(x["writ"] for x in p["steps"]), sorted([int(w125.writ), int(w200.writ)]), "cap 1.2c / rep: the 75 writ waits")
+    ctx.eq((p["daily"], p["days"]), ((2, 325.0, 370.0), 18), "... and a day under the cap gives 325")
+    db.repCap = 0
+    # a Diplomat bonus multiplies every turn-in: 5 ranks = +10% -> 75 gives 82.5; 80 to go is covered by one 75 writ
+    db.diplomatRank = 5
+    c.set_reputation(8920)
+    p = rep_plan(c)
+    ctx.eq([(x["writ"], x["rep"]) for x in p["steps"]], [(int(w75.writ), 82.5)], "with +10% the 75 writ covers 80")
+    db.diplomatRank = 0
+    # standings: targets above the current one; a stored target at or below it falls back to the next
+    for value, reaction, targets in ((0, 4, [5, 6, 7, 8]), (2999, 4, [5, 6, 7, 8]), (3000, 5, [6, 7, 8]), (20999, 6, [7, 8]),
+                                     (21000, 7, [8]), (42000, 8, [])):
+        c.set_reputation(value)
+        ctx.eq([int(x) for x in lua_list(c.eval("local WC = ...; return WC:RepTargets()", WC))], targets, "targets at %d" % value)
+    c.set_reputation(9500)                      # Honored
+    db.repTarget = 8
+    p = rep_plan(c)
+    ctx.eq((p["target"], p["targetRep"], p["need"]), (8, 42000, 32500), "target Exalted from Honored 9500")
+    db.repTarget = 6                            # already Honored
+    p = rep_plan(c)
+    ctx.eq((p["target"], p["targetRep"]), (7, 21000), "a target already reached falls back to the next standing")
+    db.repTarget = "next"
+    c.set_reputation(42000)
+    ctx.eq(rep_plan(c)["why"], "top", "Exalted: nothing to plan")
+    # the game shows no reputation with the faction yet: counted from Neutral 0
+    c.eval("__WOWMOCK.factions[2587] = nil; __WOWMOCK.factions[2586] = nil")
+    p = rep_plan(c)
+    ctx.eq((p["assumed"], p["reaction"], p["value"], p["target"], p["need"]), (True, 4, 0.0, 5, 3000.0), "no reputation shown: Neutral 0 -> Friendly")
+    check_clean(ctx, c)
+
+
+@scenario("rep_plan_bags_done", "2026.11.3: the plan leaves out writs handed in today, does not buy what is in the bags (only the missing part of a stack), and can use Favor for empty-crate returns")
+def s_rep_plan_bags(ctx):
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
+    WC = c.WC
+    db = c.g("GetrichDB")
+    setup_market_130(c)                                # (its Lesser Mana Potion writ is already done today)
+    auctionator_scan_ah(c, fire=False)
+    c.set_reputation(4000)                             # Friendly, 5000 to Honored
+    shot = writ_of(c, 264037)                          # Crafted Solid Shot x 200
+    # the six writs that can be bought in this market (writ + item), cheapest reputation first:
+    #   Solid Shot 20s + 200 x 5c = 30s / 75; Unstable Trigger 40s + 25s / 125; Monocle 30s + 90s / 125;
+    #   Glittering Axe 50s + 2g / 125; Firewater 90s + 4g / 200; Runecloth Bag 2g + 3g / 200
+    p = rep_plan(c)
+    ctx.eq([x["writ"] for x in p["steps"]], [264037, 264085, 264082, 264072, 264124, 264153], "the six writs for sale, cheapest reputation first")
+    ctx.eq((p["rep"], p["cash"], p["reached"], p["short"], p["doneN"]), (850.0, 145500.0, False, 4150.0, 1), "totals")
+    ctx.check(264013 not in [x["writ"] for x in p["steps"]], "the writ done today (Lesser Mana Potion, for sale at 18s) is not in the plan")
+    ctx.eq(len(p["shop"]), 12, "a writ and an item to buy for each")
+    # handed in today -> gone from the plan
+    c.turn_in(94282)                                   # Craftsman's Monocle
+    c.advance(1)
+    p = rep_plan(c)
+    ctx.check(264082 not in [x["writ"] for x in p["steps"]], "a writ handed in today is not in the plan")
+    ctx.eq((p["rep"], p["cash"], p["doneN"], p["doneRep"]), (725.0, 133500.0, 2, 200.0), "totals without it; two done today")
+    # in the bags: the Glittering Axe writ and its axe; 150 of the 200 Solid Shot; the Firewater writ only
+    c.set_bags({(0, 1): (264072, 1), (0, 2): (7942, 1), (0, 3): (int(shot.item), 150), (0, 4): (264124, 1)})
+    c.advance(2)
+    p = rep_plan(c)
+    by = {x["writ"]: x for x in p["steps"]}
+    ctx.eq((by[264072]["haveWrit"], by[264072]["buyQty"], by[264072]["cost"]), (True, 0, 0.0), "writ and item in the bags: nothing to buy")
+    ctx.eq((by[264037]["haveQty"], by[264037]["buyQty"], by[264037]["itemCost"]), (150, 50, 250.0), "150 of 200 in the bags: 50 x 5c to buy")
+    ctx.eq((by[264124]["haveWrit"], by[264124]["writCost"], by[264124]["itemCost"]), (True, 0.0, 40000.0), "the writ in the bags: only the item is bought")
+    ctx.eq(p["steps"][0]["writ"], 264072, "what costs nothing comes first")
+    shop = {i: (q, cst) for (i, q, cst, _) in p["shop"]}
+    ctx.check(264072 not in shop and 7942 not in shop and 264124 not in shop, "owned things are not on the shopping list: %s" % sorted(shop))
+    ctx.eq(shop.get(int(shot.item)), (50, 250.0), "the shopping list has the missing 50")
+    ctx.eq(p["cash"], 133500.0 - 25000 - 750 - 9000, "the money to spend drops by what is owned")
+    # a day after today is priced without the bags (they are for today): all seven priced writs, bought in full
+    ctx.eq(p["daily"], (7, 925.0, 147300.0), "a day at today's prices")
+    # empty-crate returns: only with Favor, only from Friendly, only when switched on
+    ctx.check(not any(x.get("receipt") for x in p["steps"]), "no Favor, no crate returns")
+    c.set_currency(FAVOR, 100)
+    p = rep_plan(c)
+    r = [x for x in p["steps"] if x.get("receipt")]
+    ctx.require(len(r) == 1, "100 Favor: crate returns are planned")
+    # 100 Favor = 6 receipts; the cheapest crate is the Expert Parts one at 1s; Favor is worth what the best crate makes it for
+    ctx.eq((r[0]["n"], r[0]["favor"], r[0]["rep"], r[0]["buyCrates"], r[0]["cash"]), (6, 90, 300.0, 6, 600.0), "6 returns: 90 Favor, 6 crates at 1s")
+    ctx.eq(p["favor"], 90, "the plan says how much Favor it spends")
+    ctx.check((248710, 6, 600.0, "crate") in p["shop"], "the crates are on the shopping list: %s" % p["shop"][-2:])
+    # receipts and crates already in the bags are used first
+    bags = {(0, 1): (264072, 1), (0, 2): (7942, 1), (0, 3): (int(shot.item), 150), (0, 4): (264124, 1), (0, 5): (RECEIPT, 2), (0, 6): (248710, 3)}
+    c.set_bags(bags)
+    c.advance(2)
+    r = [x for x in rep_plan(c)["steps"] if x.get("receipt")][0]
+    ctx.eq((r["n"], r["haveReceipts"], r["favor"], r["haveCrates"], r["buyCrates"], r["cash"]), (8, 2, 90, 3, 5, 500.0), "2 receipts + 3 crates in the bags: 8 returns, 5 crates to buy")
+    # The plan check (the tab's check button in the plan view) searches what the plan buys, round after round.
+    # Only one Expert Parts crate is listed at 1s: the other crates come from the next cheapest kinds, which the
+    # next round searches. Afterwards the money to spend is exact; the Favor's worth (what the best crate makes it
+    # for, from the Crates tab's prices) is still an estimate.
+    c.set_bags({(0, 3): (int(shot.item), 150)})
+    c.advance(2)
+    before = rep_plan(c)
+    c.open_ah()
+    c.advance(1)
+    plan_view(c)
+    ok, _ = start_scan(c, "writs")
+    ctx.require(ok and not WC.Scanner.active, "the plan check did not run")
+    p = rep_plan(c)
+    ctx.check(int(WC.Scanner.round) >= 2, "the check went on to the crates that moved into the plan (rounds: %s)" % WC.Scanner.round)
+    ctx.eq((p["cashEst"], p["est"]), (False, True), "money exact after the plan check; the Favor's worth stays an estimate")
+    r = [x for x in p["steps"] if x.get("receipt")]
+    crates = [(i, q, cst) for (i, q, cst, kind) in p["shop"] if kind == "crate"]
+    ctx.check((248710, 1, 100.0) in crates, "exactly one crate at 1s is listed: %s" % crates)
+    ctx.check(sum(q for (_, q, _) in crates) == (r[0]["buyCrates"] if r else 0) and p["cash"] > before["cash"],
+              "the other crates are dearer kinds: %s; money %s -> %s" % (crates, before["cash"], p["cash"]))
+    ctx.check(set(p["items"]) <= set(st_items(c)), "everything the final plan buys was searched")
+    plan_view(c, False)
+    c.close_ah()
+    db.repUseFavor = False
+    ctx.check(not any(x.get("receipt") for x in rep_plan(c)["steps"]), "switched off: no crate returns")
+    db.repUseFavor = True
+    c.set_reputation(2000)                             # Neutral: the scribe does not sell receipts yet
+    ctx.check(not any(x.get("receipt") for x in rep_plan(c)["steps"]), "below Friendly: no crate returns")
+    # the one-time Shipping Label quest
+    ctx.check(rep_plan(c)["labelOpen"], "Shipping Label not done: the plan says so")
+    c.complete_quest(98248)
+    ctx.check(not rep_plan(c)["labelOpen"], "... and not once it is done")
+    check_clean(ctx, c)
+
+
+@scenario("rep_plan_view", "2026.11.3: the plan view of the Writ tab: prices and 'in bags' on every row, totals, shopping list to Auctionator, the check searches the plan's items, a turn-in removes its row")
+def s_rep_plan_view(ctx):
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
+    WC = c.WC
+    db = c.g("GetrichDB")
+    L = WC.L
+    setup_market_130(c)
+    c.eval("__WOWMOCK.questsDone[94213] = nil")
+    c.open_ah()
+    c.advance(1)
+    auctionator_scan_ah(c)
+    c.set_reputation(4000)
+    shot = writ_of(c, 264037)
+    c.set_bags({(0, 1): (264072, 1), (0, 2): (7942, 1), (0, 3): (int(shot.item), 150)})
+    c.advance(2)
+    c.slash("/gr writs")
+    c.advance(0.5)
+    tab = WC.UI.tabs.writs
+    # list view: the filters; the standing with numbers
+    t = c.texts()
+    ctx.check(any(str(L.HIDE_DONE) in x for x in t) and not any(str(L.REP_SHOP_BTN) == x for x in t), "list view: filters shown, plan controls hidden")
+    ctx.check(any("4,000 / 9,000" in x for x in t), "the standing shows the reputation numbers: %s" % [x for x in t if "tanding" in x or "声望" in x][:2])
+    # plan view
+    plan_view(c)
+    t = c.texts()
+    ctx.check(not any(str(L.HIDE_DONE) in x for x in t), "plan view: the list filters are hidden")
+    for need in (str(L.REP_TARGET), str(L.REP_CAP), str(L.REP_FAVOR), str(L.REP_SHOP_BTN), str(L.REP_PLAN_LABEL), str(L.REP_PLAN_SPEND)):
+        ctx.check(any(need in x for x in t), "plan view lacks %r" % need)
+    ctx.check(any("4,000" in x and "9,000" in x and "5,000" in x for x in t), "the goal line: from 4,000 to 9,000, 5,000 to go")
+    p = rep_plan(c)
+    ctx.check(any(("~" + ctx.money(p["cash"])) in x for x in t), "money to spend today (%s) is shown: %s" % (ctx.money(p["cash"]), [x for x in t if "~" in x][:6]))
+    ctx.check(any(str(L.REP_OWNED) == x for x in t), "'in bags' on the row of the owned writ")
+    ctx.check(any((str(L.REP_OWNED_N) % 150) in x and (str(L.REP_BUY_N) % 50) in x for x in t), "150 in bags, buy 50 on the Solid Shot row")
+    ctx.check(any((str(L.REP_PLAN_DAYS) % ("{:,}".format(int(p["short"])), p["days"])) in x for x in t),
+              "the plan says how much is missing after today and for how many days: %s" % [x for x in t if "{:,}".format(int(p["short"])) in x][:3])
+    # tooltips: the summary with the shopping list, a row with what is bought
+    tip = "\n".join(c.hover(tab.best.frame))
+    for need in (str(L.REP_TT_NEED), str(L.REP_TT_CASH), str(L.REP_TT_DAILY), (str(L.REP_TT_SHOP) % len(p["shop"])), "50 × ", str(L.REP_TT_LABEL)[:20]):
+        ctx.check(need in tip, "summary tooltip lacks %r:\n%s" % (need, tip))
+    rows = [r for r in lua_list(tab.list.rows) if r.entry is not None and r.IsVisible(r)]
+    ctx.eq(len(rows), len(p["steps"]), "one row per turn-in")
+    tip = "\n".join(c.hover(rows[0]))
+    ctx.check(str(L.REP_OWNED) in tip, "row tooltip of the owned writ says 'in bags':\n%s" % tip)
+    # clicking a name puts it into the Auction House search box and searches
+    row = [r for r in rows if r.entry.writ is not None and int(r.entry.writ.writ) == 264085][0]
+    row.hotB.Click(row.hotB, "LeftButton")
+    ctx.eq(c.eval("return AuctionHouseFrame.SearchBar.SearchBox:GetText()"), "Unstable Trigger", "click the requested item -> AH search box")
+    row.hotA.Click(row.hotA, "LeftButton")
+    ctx.eq(c.eval("return AuctionHouseFrame.SearchBar.SearchBox:GetText()"), "Craftsman's Writ: Unstable Trigger", "click the writ -> AH search box")
+    c.advance(2)
+    # the shopping list in Auctionator: exact names with quantities, nothing that is in the bags
+    n0 = len(c.chat)
+    tab.shopButton.Click(tab.shopButton, "LeftButton")
+    lists = c.eval("return Auctionator.lists")
+    name = str(L.REP_SHOP_NAME)
+    ctx.require(lists[name] is not None, "the shopping list %r was not created: %s" % (name, list(c.chat)[n0:]))
+    terms = [str(x) for x in lua_list(lists[name])]
+    ctx.eq(len(terms), len(p["shop"]), "one entry per thing to buy")
+    ctx.check("Crafted Solid Shot|exact|50" in terms, "the missing 50 Solid Shot, exact name: %s" % terms[:4])
+    ctx.check("Craftsman's Writ: Unstable Trigger|exact|1" in terms and "Unstable Trigger|exact|1" in terms, "writ and item of a row")
+    ctx.check(not any("Blue Glittering Axe" in x for x in terms), "nothing that is already in the bags")
+    ctx.check(any((str(L.REP_SHOP_DONE) % (name, len(terms))) in str(m) for m in c.chat[n0:]), "the chat says where the list is: %s" % list(c.chat)[n0:])
+    # the check button: everything the plan buys, exactly; the plan is exact afterwards
+    ctx.check(p["est"], "(before the check the plan is an estimate)")
+    n0 = len(c.chat)
+    ok, secs = start_scan(c, "writs")
+    ctx.require(ok and not WC.Scanner.active, "the plan check did not run")
+    ctx.eq(set(st_items(c)), set(p["items"]), "the check searches what the plan buys, and nothing else")
+    p2 = rep_plan(c)
+    ctx.check(not p2["est"], "the plan is exact after the check")
+    ctx.eq(WC.Scanner.round, 1, "one round: the exact prices did not change what the plan buys")
+    ctx.check(any((str(L.PRINT_PLAN).split("%")[0]) in str(m) for m in c.chat[n0:]), "the chat line of the plan check: %s" % list(c.chat)[n0:])
+    # handing one in: its row is gone, today's count goes up
+    n_rows = len(p2["steps"])
+    c.turn_in(94272)
+    c.set_bags({(0, 3): (int(shot.item), 150)})
+    c.advance(2)
+    rows = [r for r in lua_list(tab.list.rows) if r.entry is not None and r.IsVisible(r)]
+    ctx.eq(len(rows), n_rows - 1, "the row of the writ handed in is gone")
+    ctx.check(any((str(L.REP_DONE_TODAY) % (1, "125")) in x for x in c.texts()), "today's turn-in is counted next to the standing")
+    # without Auctionator's shopping lists: a message, no error
+    c.eval("Auctionator.API.v1.CreateShoppingList = nil")
+    n0 = len(c.chat)
+    tab.shopButton.Click(tab.shopButton, "LeftButton")
+    ctx.check(any(str(L.REP_SHOP_NOAPI) in str(m) for m in c.chat[n0:]), "no shopping-list API: says so")
+    # item names the client has not loaded yet: asked for, and the player is told to try again
+    c6 = ctx.client(cached=False, login=False)
+    install_auctionator(c6)
+    c6.login()
+    X6 = c6.WC.External
+    ctx.check(not c6.eval("return C_Item.IsItemDataCachedByID(4800)"), "(Mighty Chain Pants is not in the client's cache)")
+    ok, why, n = multi(c6.eval("local X = ...; return X:ShoppingList('t', { { 4800, 3 } })", X6), 3)
+    ctx.eq((ok, why, n), (False, "names", 1), "a name that is not loaded: no list yet")
+    c6.advance(3)
+    ok, name, n = multi(c6.eval("local X = ...; return X:ShoppingList('t', { { 4800, 3 } })", X6), 3)
+    ctx.eq((ok, name, n), (True, "t", 1), "... and it works once the name arrived")
+    ctx.eq([str(x) for x in lua_list(c6.eval("return Auctionator.lists.t"))], ["Mighty Chain Pants|exact|3"], "the list")
+    ctx.eq(multi(c6.eval("local X = ...; return X:ShoppingList('t', {})", X6), 2), (False, "empty"), "nothing to buy")
+    check_clean(ctx, c6, "cold cache")
+    # back to the list view
+    plan_view(c, False)
+    t = c.texts()
+    ctx.check(any(str(L.HIDE_DONE) in x for x in t) and not any(str(L.REP_SHOP_BTN) == x for x in t), "list view again")
+    for w in c.regions(c.g("GetrichFrame")):
+        if w.IsVisible(w):
+            c.hover(w)
     check_clean(ctx, c)
 
 

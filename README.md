@@ -7,7 +7,7 @@ WoW Forever 挣钱助手。作者 **Aaron Tong**（联系：Luvx.inc@gmail.com�
 | 页签 | 做什么 |
 |---|---|
 | **箱子** | 全部 30 种 Waylaid Crate（学徒、熟练、专家、工匠），自动选最便宜的填法，按每个 Merchant's Favor 的成本排名 |
-| **Writ** | 150 种 Craftsman's Writ，Writ + 需求物品都从拍卖行买，按每点声望的成本排名 |
+| **Writ** | 150 种 Craftsman's Writ，Writ + 需求物品都从拍卖行买，按每点声望的成本排名；今天交过的自动消失。**冲声望**：从当前声望到目标声望，今天交哪些最省钱、要买什么、一共多少钱 |
 | **倒卖** | Auctionator 扫到的、一口价低于 NPC 收购价的物品，买下卖店就赚 |
 | **制造** | **赚钱**：每个配方的材料成本（拍卖行或商人，取便宜的）对比卖 NPC、挂拍卖行、做了再分解三种卖法的利润，可以把训练师能学但还没学的配方也算进来。**冲技能**：每点技能的成本、从当前技能到目标的最省钱路线和购物清单 |
 | **分解** | 背包里的装备、拍卖行上的装备、你能做的装备：分解能出什么、值多少，比卖店多赚多少 |
@@ -56,6 +56,26 @@ top entries of a tab exactly. One window docked to the Auction House, plus a set
   每点技能成本 = 净成本 ÷ (升级概率 × 每次升几点)。路线是每一级都选每点最便宜的配方（已学的和训练师能学的），整条路线的材料合起来按拍卖行挂单重新算价。
 - **没有价格不当 0**：缺价的显示「—」并说明缺哪一样，不会被当成免费或零利润。
 - **不藏结果**：默认只隐藏已经被买走的倒卖；其他筛选都要你手动打开，隐藏了多少会显示出来。
+
+## 冲声望（Writ 页）
+
+每张 Writ 每天只能交一次。插件读游戏的任务完成标记，并且自己记下你今天交过的（按角色，到每日重置清零），交过的从列表和方案里消失。
+
+Writ 页左上的「视图」切到 **冲声望**：
+
+1. 选目标（下一级 / 尊敬 / 崇敬 / 崇拜）。当前声望和还差多少点从游戏读。
+2. 方案列出今天该交的每一张：Writ 价格、需求物品成本、声望、每点成本。上方是合计：交几张、得多少声望、今天要花多少钱。
+3. 背包里已有的标「背包已有」，不再计入要花的钱；需求物品只买缺的数量。
+4. 点 **购物清单**，把要买的全部物品发到 Auctionator 的购物清单「Getrich 声望」，到 Auctionator 的「购物」页选它逐个买。也可以点任意一行的名字直接搜索。
+5. 买完交掉，交过的那一行就消失，合计跟着变。
+
+规则：
+
+- 方案是能凑够声望的最便宜的组合（Writ 有 75 / 125 / 200 三档，每张最多一次），不是简单按单价排。
+- 今天凑不够时，今天能交的全部列出，并按今天的价格估算还要几天。
+- 「每点上限」把太贵的留到以后；「用 Favor」允许用现有的 Merchant's Favor 换送货单（空箱 + 送货单 = 50 声望，需要友善，每张 15 Favor），不想动 Favor 就关掉。
+- 在这个视图里点「核实前几名」，会精确搜索方案里要买的全部物品，然后重新规划。
+- 只看背包，不看银行。「几天」按今天的价格估，仅供参考。
 
 ## 价格从哪来
 
@@ -117,7 +137,8 @@ Getrich 只用 Auctionator 公开给其他插件的接口（`Auctionator.API.v1`
 | wow-professions.com、leprestore.com、forever-codex.com、mmoherald.com | 交箱银币（Wowhead 没有这项，以游戏里实际记录为准）、送货单需要友善 |
 | [warcraft.wiki.gg Patch 1.60.1/API changes](https://warcraft.wiki.gg/wiki/Patch_1.60.1/API_changes) | 规则集的读法（`C_GameRules.IsGameRuleActive` + `Enum.GameRule.HardcoreRuleset / RPRuleset / PvPRuleset`） |
 | WoW Forever 客户端数据表 ItemSparse + Item（同一 build） | 内置物品表 `DataItems.lua`：7,197 个可交易物品的商店收购价，其中 1,192 件可分解装备的品质、类别和物品等级 |
-| Auctionator 的插件接口 `Auctionator.API.v1`（运行时调用，必需） | 全部拍卖行价格 |
+| Auctionator 的插件接口 `Auctionator.API.v1`（运行时调用，必需） | 全部拍卖行价格；冲声望的购物清单（`CreateShoppingList`） |
+| WoW Forever 客户端数据表 Faction（同一 build）、暴雪界面源码的声望接口说明 | 声望等级的起点（3,000 / 9,000 / 21,000 / 42,000）和当前声望的读法 |
 
 数据表用 `tools/gen_data.py` 生成，见 [tools/README.md](tools/README.md)。手写的数据（箱子、Writ、手续费等）用
 `tools/verify_game_data.py` 对照客户端数据表和 Wowhead 核对，游戏更新后跑一遍就知道哪里变了。
@@ -126,7 +147,7 @@ Getrich 只用 Auctionator 公开给其他插件的接口（`Auctionator.API.v1`
 
 ```
 pip install lupa
-python3 tests/test_merge.py [--locale zhCN|zhTW] [--uncached]   # 场景测试：Auctionator 价格、核实、计价、冲技能、分解、记录、设置、界面、旧版回归
+python3 tests/test_merge.py [--locale zhCN|zhTW] [--uncached]   # 场景测试：Auctionator 价格、核实、计价、冲声望、冲技能、分解、记录、设置、界面、旧版回归
 python3 tests/mock_test.py Getrich zhCN full                     # 箱子 / Writ 的计价（1.3.0 原有测试）+ 2026.11.2 的流程，另一套独立的模拟客户端
 python3 tools/gen_data.py --check --out Getrich                  # 检查内置数据表
 python3 tools/verify_game_data.py --db cache/1.60.1.70938 --download --wowhead   # 手写数据对照正式服

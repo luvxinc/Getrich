@@ -32,6 +32,7 @@ WC.AddLocale({
     SCAN_KIND_DE = "disenchanting",
     SCAN_KIND_HISTORY = "watched items",
     SCAN_PH_QUICK = "the best %d",
+    SCAN_PH_PLAN = "the plan's items",
     SCAN_PH_FLIP_CHECK = "cheap listings",
     SCAN_PH_DE_MATS = "enchanting materials",
     SCAN_PH_WATCHED = "watched items",
@@ -48,6 +49,7 @@ WC.AddLocale({
     SCAN_KIND_DE = "附魔分解",
     SCAN_KIND_HISTORY = "关注物品",
     SCAN_PH_QUICK = "排在前面的 %d 项",
+    SCAN_PH_PLAN = "方案里要买的物品",
     SCAN_PH_FLIP_CHECK = "低价物品",
     SCAN_PH_DE_MATS = "附魔材料",
     SCAN_PH_WATCHED = "关注物品",
@@ -64,6 +66,7 @@ WC.AddLocale({
     SCAN_KIND_DE = "附魔分解",
     SCAN_KIND_HISTORY = "關注物品",
     SCAN_PH_QUICK = "排在前面的 %d 項",
+    SCAN_PH_PLAN = "方案裡要買的物品",
     SCAN_PH_FLIP_CHECK = "低價物品",
     SCAN_PH_DE_MATS = "附魔材料",
     SCAN_PH_WATCHED = "關注物品",
@@ -739,8 +742,13 @@ local function TopCrateItems()
   return list
 end
 
--- the writ and the requested item of the best ranked writs that are shown
+-- The writ and the requested item of the best ranked writs that are shown. In the plan view of the tab
+-- (GetrichDB.writView = "plan"): everything today's reputation plan buys (WC:RepPlan in Core.lua).
 local function TopWritItems()
+  if WC:DB().writView == "plan" and WC.RepPlan then
+    local ok, plan = pcall(WC.RepPlan, WC, true)
+    return (ok and type(plan) == "table" and plan.items) or {}
+  end
   local list, n, top = {}, 0, QuickTop()
   for _, e in ipairs(WC:VisibleWrits(WC:EvaluateWrits())) do
     if e.perRep and not e.receipt then
@@ -755,6 +763,11 @@ end
 
 local function QuickLabel()
   return L.SCAN_PH_QUICK:format(QuickTop())
+end
+
+local function WritLabel()
+  if WC:DB().writView == "plan" then return L.SCAN_PH_PLAN end
+  return QuickLabel()
 end
 
 -- without Auctionator's prices there is no ranking, so nothing to check: say what is missing
@@ -779,7 +792,7 @@ Scanner:RegisterKind("writs", {
   label = function() return L.SCAN_KIND_WRITS end,
   canStart = NeedPrices(TopWritItems),
   phases = {
-    { label = QuickLabel, items = TopWritItems, again = true },
+    { label = WritLabel, items = TopWritItems, again = true },
   },
 })
 

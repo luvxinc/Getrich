@@ -19,6 +19,7 @@ local addonName, WC = ...
 --   vendorObs = {}  (Merchant.lua)   recipes = {}, chars = {}  (Recipes.lua)   deSamples = {}  (Disenchant.lua)
 --   crateObs  = { [questID] = { n = turn-ins seen, f = { last Favor gains, at most 5 }, money = copper } }  (Core.lua)
 --   extScans  = { [marketKey] = { t = time, ids = { itemID, ... } } }   Auctionator scans watched (External.lua)
+--   writLog   = { [charKey] = { reset = time of the daily reset, done = { [questID] = time } } }   writs turned in today (Core.lua)
 --   market    = "Forever <ruleset>|<Alliance / Horde / Neutral>" (a client with realms: "<realm>|..."): the Auction
 --               House the price tables above belong to
 --   markets   = { [marketKey] = { results, scannedAt, history } }   price tables of the other houses
@@ -49,12 +50,16 @@ Store.DEFAULTS = {
   hideNoItem = true,      -- ignore writs whose requested item can't be bought
   hideDone = true,        -- ignore writs already turned in today
   diplomatRank = 0,       -- Legacy Diplomat rank (0-5)
+  writView = "list",      -- "list" (every writ, ranked) | "plan" (what to hand in to reach a standing)
+  repTarget = "next",     -- the standing the plan aims at: "next" | 5 Friendly | 6 Honored | 7 Revered | 8 Exalted
+  repCap = 0,             -- the plan leaves out what costs more than this per reputation (copper; 0 = no cap)
+  repUseFavor = true,     -- the plan may spend Merchant's Favor on Forged Delivery Receipts (empty crate returns)
 }
 local DEFAULTS = Store.DEFAULTS
 
 -- tables every DB has (owners noted in the header)
 local TABLES = { "results", "scannedAt", "history", "watch", "vendorObs", "recipes", "chars", "deSamples", "crateObs",
-                 "extScans" }
+                 "extScans", "writLog" }
 
 -- the price tables of one Auction House (see the header)
 local MARKET_TABLES = { "results", "scannedAt", "history" }
