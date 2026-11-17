@@ -11,20 +11,20 @@ WC.AddLocale({
   enUS = {
     FLIP_TAB = "Flips",
     FLIP_SUBTITLE = "AH listings cheaper than the vendor pays · buy them on the AH, sell them to any vendor",
-    FLIP_SCAN_TIP = "Reads the whole Auction House (several pages, 1-3 minutes), then checks the cheapest items exactly.",
+    FLIP_SCAN_TIP = "Searches the most promising items exactly: how many are really listed below the vendor price.",
     FLIP_SHOW_GONE = "Show items that are no longer cheap",
     FLIP_SHOW_GONE_TIP = "The exact check sometimes finds an item already sold, or no longer below the vendor price. Those are hidden unless this is on.",
     FLIP_MIN_PROFIT = "Minimum profit",
     FLIP_MIN_PROFIT_TIP = "Hide flips that make less than this in total.",
     FLIP_ANY = "any",
-    FLIP_NOTE = "Whole AH read %s · %d items",
-    FLIP_NOTE_NEVER = "The whole AH has not been read yet",
+    FLIP_NOTE = "Prices: Auctionator's full scan, %s",
+    FLIP_NOTE_NEVER = "No prices from Auctionator yet",
     FLIP_HEAD_ITEM = "Item",
     FLIP_HEAD_PRICE = "AH price (each)",
     FLIP_HEAD_VENDOR = "Vendor pays",
     FLIP_HEAD_UNITS = "Units",
     FLIP_HEAD_PROFIT = "Profit",
-    FLIP_EST = "estimate (scan again for exact quantity)",
+    FLIP_EST = "estimate (check for the exact quantity)",
     FLIP_EST_SHORT = "estimate",
     FLIP_GONE = "no longer below the vendor price",
     FLIP_EXACT = "exact · checked %s",
@@ -32,11 +32,11 @@ WC.AddLocale({
     FLIP_BEST_LABEL = "Best flip",
     FLIP_BEST_PER = "Total profit",
     FLIP_BEST_DETAIL = "Buy %d × at about %s, vendor pays %s each, profit %s",
-    FLIP_BEST_EST = "Buy at %s, vendor pays %s, profit at least %s · scan again for the exact quantity",
+    FLIP_BEST_EST = "Buy at %s, vendor pays %s, profit at least %s · check for the exact quantity",
     FLIP_BEST_NET = "Cost %s · checked %s",
-    FLIP_BEST_EMPTY = "After a scan, the best flip shows up here",
-    FLIP_BEST_SCANNING = "Scanning… the best flip will show up here",
-    FLIP_EMPTY_NODATA = "No Auction House data yet.\nPress Scan: Getrich reads the whole Auction House, then checks the cheapest items exactly.",
+    FLIP_BEST_EMPTY = "After a full scan in Auctionator, the best flip shows up here",
+    FLIP_BEST_SCANNING = "Checking… the best flip will show up here",
+    FLIP_EMPTY_NODATA = "No prices yet.\nRun a full scan in Auctionator: everything it sees below the vendor price shows up here.",
     FLIP_EMPTY_NONE = "Nothing on the Auction House is cheaper than what a vendor pays right now.",
     FLIP_TT_UNIT = "Cheapest AH price (each)",
     FLIP_TT_AVG = "Average price of the cheap ones",
@@ -45,13 +45,13 @@ WC.AddLocale({
     FLIP_TT_COST = "Total cost",
     FLIP_TT_PROFIT = "Total profit",
     FLIP_TT_AGE = "Price checked",
-    FLIP_TT_EST = "Only the cheapest price is known so far, not how many are that cheap. Scan again for the exact quantity.",
+    FLIP_TT_EST = "Only the cheapest price is known (from Auctionator), not how many are that cheap. \"Check the best\" finds out.",
     FLIP_TT_GONE = "The exact check found no listing below the vendor price any more.",
     FLIP_TT_MORE = "Every listing that was checked is below the vendor price, so there may be even more.",
     FLIP_TT_HOWTO = "Buy them on the Auction House, then sell them to any vendor.",
     FLIP_CLICK = "Click: search this item on the Auction House",
-    FLIP_PRINT_BEST = "Scan finished. Best flip: %s, profit %s. %d items are cheaper than the vendor pays.",
-    FLIP_PRINT_NONE = "Scan finished. Nothing on the Auction House is cheaper than the vendor pays.",
+    FLIP_PRINT_BEST = "Check finished. Best flip: %s, profit %s. %d items are cheaper than the vendor pays.",
+    FLIP_PRINT_NONE = "Check finished. Nothing on the Auction House is cheaper than the vendor pays.",
     FLIP_AGE_NOW = "just now",
     FLIP_AGE_MIN = "%d min ago",
     FLIP_AGE_HOUR = "%d h ago",
@@ -61,20 +61,20 @@ WC.AddLocale({
   zhCN = {
     FLIP_TAB = "倒卖",
     FLIP_SUBTITLE = "拍卖行上比商店收购价还便宜的东西 · 从拍卖行买下，卖给任意商人",
-    FLIP_SCAN_TIP = "先读取整个拍卖行（分好几页，约 1-3 分钟），再逐个精确查询最便宜的物品。",
+    FLIP_SCAN_TIP = "精确搜索最有希望的物品：到底有多少个低于商店收购价。",
     FLIP_SHOW_GONE = "显示已经不便宜的",
     FLIP_SHOW_GONE_TIP = "精确查询时，有些物品已经被买走，或者不再低于商店价。默认隐藏，勾选后显示。",
     FLIP_MIN_PROFIT = "最低利润",
     FLIP_MIN_PROFIT_TIP = "总利润低于这个数的不显示。",
     FLIP_ANY = "不限",
-    FLIP_NOTE = "整个拍卖行读取于 %s · %d 种物品",
-    FLIP_NOTE_NEVER = "还没读取过整个拍卖行",
+    FLIP_NOTE = "价格：Auctionator 的全扫描，%s",
+    FLIP_NOTE_NEVER = "还没有 Auctionator 的价格",
     FLIP_HEAD_ITEM = "物品",
     FLIP_HEAD_PRICE = "拍卖价（单个）",
     FLIP_HEAD_VENDOR = "商店收购价",
     FLIP_HEAD_UNITS = "数量",
     FLIP_HEAD_PROFIT = "利润",
-    FLIP_EST = "估算（再扫描一次可得准确数量）",
+    FLIP_EST = "估算（核实后可得准确数量）",
     FLIP_EST_SHORT = "估算",
     FLIP_GONE = "已经不低于商店价了",
     FLIP_EXACT = "准确 · %s查过",
@@ -82,11 +82,11 @@ WC.AddLocale({
     FLIP_BEST_LABEL = "最赚的倒卖",
     FLIP_BEST_PER = "总利润",
     FLIP_BEST_DETAIL = "买 %d 个（均价约 %s），商店每个收 %s，利润 %s",
-    FLIP_BEST_EST = "%s 买入，商店收 %s，利润至少 %s · 再扫描一次可得准确数量",
+    FLIP_BEST_EST = "%s 买入，商店收 %s，利润至少 %s · 核实后可得准确数量",
     FLIP_BEST_NET = "成本 %s · %s查过",
-    FLIP_BEST_EMPTY = "扫描后这里显示最赚的倒卖",
-    FLIP_BEST_SCANNING = "扫描中…有结果后这里会显示最赚的倒卖",
-    FLIP_EMPTY_NODATA = "还没有拍卖行数据。\n点『扫描』：先读取整个拍卖行，再精确查询最便宜的物品。",
+    FLIP_BEST_EMPTY = "在 Auctionator 里做一次全扫描后，这里显示最赚的倒卖",
+    FLIP_BEST_SCANNING = "核实中…有结果后这里会显示最赚的倒卖",
+    FLIP_EMPTY_NODATA = "还没有价格数据。\n请在 Auctionator 里做一次全扫描：它看到的低于商店收购价的物品会显示在这里。",
     FLIP_EMPTY_NONE = "目前拍卖行上没有比商店收购价还便宜的东西。",
     FLIP_TT_UNIT = "拍卖行最低价（单个）",
     FLIP_TT_AVG = "便宜的那部分的均价",
@@ -95,13 +95,13 @@ WC.AddLocale({
     FLIP_TT_COST = "总成本",
     FLIP_TT_PROFIT = "总利润",
     FLIP_TT_AGE = "价格查询时间",
-    FLIP_TT_EST = "目前只知道最低价，不知道有多少个这么便宜。再扫描一次可得准确数量。",
+    FLIP_TT_EST = "目前只知道最低价（来自 Auctionator），不知道有多少个这么便宜。点『核实前几名』可得准确数量。",
     FLIP_TT_GONE = "精确查询时已经没有低于商店价的挂单了。",
     FLIP_TT_MORE = "查到的挂单全都低于商店价，可能还有更多。",
     FLIP_TT_HOWTO = "从拍卖行买下，再卖给任意商人。",
     FLIP_CLICK = "点击：在拍卖行搜索这个物品",
-    FLIP_PRINT_BEST = "扫描完成。最赚的倒卖：%s，利润 %s。共 %d 种物品比商店收购价便宜。",
-    FLIP_PRINT_NONE = "扫描完成。拍卖行上没有比商店收购价还便宜的东西。",
+    FLIP_PRINT_BEST = "核实完成。最赚的倒卖：%s，利润 %s。共 %d 种物品比商店收购价便宜。",
+    FLIP_PRINT_NONE = "核实完成。拍卖行上没有比商店收购价还便宜的东西。",
     FLIP_AGE_NOW = "刚刚",
     FLIP_AGE_MIN = "%d 分钟前",
     FLIP_AGE_HOUR = "%d 小时前",
@@ -111,20 +111,20 @@ WC.AddLocale({
   zhTW = {
     FLIP_TAB = "倒賣",
     FLIP_SUBTITLE = "拍賣場上比商店收購價還便宜的東西 · 從拍賣場買下，賣給任意商人",
-    FLIP_SCAN_TIP = "先讀取整個拍賣場（分好幾頁，約 1-3 分鐘），再逐個精確查詢最便宜的物品。",
+    FLIP_SCAN_TIP = "精確搜尋最有希望的物品：到底有多少個低於商店收購價。",
     FLIP_SHOW_GONE = "顯示已經不便宜的",
     FLIP_SHOW_GONE_TIP = "精確查詢時，有些物品已經被買走，或者不再低於商店價。預設隱藏，勾選後顯示。",
     FLIP_MIN_PROFIT = "最低利潤",
     FLIP_MIN_PROFIT_TIP = "總利潤低於這個數的不顯示。",
     FLIP_ANY = "不限",
-    FLIP_NOTE = "整個拍賣場讀取於 %s · %d 種物品",
-    FLIP_NOTE_NEVER = "還沒讀取過整個拍賣場",
+    FLIP_NOTE = "價格：Auctionator 的全掃描，%s",
+    FLIP_NOTE_NEVER = "還沒有 Auctionator 的價格",
     FLIP_HEAD_ITEM = "物品",
     FLIP_HEAD_PRICE = "拍賣價（單個）",
     FLIP_HEAD_VENDOR = "商店收購價",
     FLIP_HEAD_UNITS = "數量",
     FLIP_HEAD_PROFIT = "利潤",
-    FLIP_EST = "估算（再掃描一次可得準確數量）",
+    FLIP_EST = "估算（核實後可得準確數量）",
     FLIP_EST_SHORT = "估算",
     FLIP_GONE = "已經不低於商店價了",
     FLIP_EXACT = "準確 · %s查過",
@@ -132,11 +132,11 @@ WC.AddLocale({
     FLIP_BEST_LABEL = "最賺的倒賣",
     FLIP_BEST_PER = "總利潤",
     FLIP_BEST_DETAIL = "買 %d 個（均價約 %s），商店每個收 %s，利潤 %s",
-    FLIP_BEST_EST = "%s 買入，商店收 %s，利潤至少 %s · 再掃描一次可得準確數量",
+    FLIP_BEST_EST = "%s 買入，商店收 %s，利潤至少 %s · 核實後可得準確數量",
     FLIP_BEST_NET = "成本 %s · %s查過",
-    FLIP_BEST_EMPTY = "掃描後這裡顯示最賺的倒賣",
-    FLIP_BEST_SCANNING = "掃描中…有結果後這裡會顯示最賺的倒賣",
-    FLIP_EMPTY_NODATA = "還沒有拍賣場資料。\n點『掃描』：先讀取整個拍賣場，再精確查詢最便宜的物品。",
+    FLIP_BEST_EMPTY = "在 Auctionator 裡做一次全掃描後，這裡顯示最賺的倒賣",
+    FLIP_BEST_SCANNING = "核實中…有結果後這裡會顯示最賺的倒賣",
+    FLIP_EMPTY_NODATA = "還沒有價格資料。\n請在 Auctionator 裡做一次全掃描：它看到的低於商店收購價的物品會顯示在這裡。",
     FLIP_EMPTY_NONE = "目前拍賣場上沒有比商店收購價還便宜的東西。",
     FLIP_TT_UNIT = "拍賣場最低價（單個）",
     FLIP_TT_AVG = "便宜的那部分的均價",
@@ -145,13 +145,13 @@ WC.AddLocale({
     FLIP_TT_COST = "總成本",
     FLIP_TT_PROFIT = "總利潤",
     FLIP_TT_AGE = "價格查詢時間",
-    FLIP_TT_EST = "目前只知道最低價，不知道有多少個這麼便宜。再掃描一次可得準確數量。",
+    FLIP_TT_EST = "目前只知道最低價（來自 Auctionator），不知道有多少個這麼便宜。點『核實前幾名』可得準確數量。",
     FLIP_TT_GONE = "精確查詢時已經沒有低於商店價的掛單了。",
     FLIP_TT_MORE = "查到的掛單全都低於商店價，可能還有更多。",
     FLIP_TT_HOWTO = "從拍賣場買下，再賣給任意商人。",
     FLIP_CLICK = "點擊：在拍賣場搜尋這個物品",
-    FLIP_PRINT_BEST = "掃描完成。最賺的倒賣：%s，利潤 %s。共 %d 種物品比商店收購價便宜。",
-    FLIP_PRINT_NONE = "掃描完成。拍賣場上沒有比商店收購價還便宜的東西。",
+    FLIP_PRINT_BEST = "核實完成。最賺的倒賣：%s，利潤 %s。共 %d 種物品比商店收購價便宜。",
+    FLIP_PRINT_NONE = "核實完成。拍賣場上沒有比商店收購價還便宜的東西。",
     FLIP_AGE_NOW = "剛剛",
     FLIP_AGE_MIN = "%d 分鐘前",
     FLIP_AGE_HOUR = "%d 小時前",
@@ -458,32 +458,28 @@ function Tab:FillRow(row, w, isTop)
   row.profitSub:SetText(e.perUnit and L.FLIP_EACH:format(Money(e.perUnit)) or "")
 end
 
--- "Whole AH read 12 min ago · 2345 items"; the item count is only recounted when a new browse arrives
-function Tab:BrowseNote()
-  local b = UIA.DB().browse
-  local t = type(b) == "table" and b.full
-  if not t then return L.FLIP_NOTE_NEVER end
-  if self.noteTime ~= t then
-    local n = 0
-    if type(b.items) == "table" then for _ in pairs(b.items) do n = n + 1 end end
-    self.noteTime, self.noteCount = t, n
-  end
-  return L.FLIP_NOTE:format(UIA.Age(t), self.noteCount)
+-- "Prices: Auctionator's full scan, 12 min ago"
+function Tab:PriceNote()
+  local X = WC.External
+  local age = X and X.AgeText and X:AgeText() or nil
+  if not age then return L.FLIP_NOTE_NEVER end
+  return L.FLIP_NOTE:format(age)
 end
 
 local function Scanning()
   return WC.Scanner and WC.Scanner.active and WC.Scanner.kind == "flips"
 end
 
-local function HasBrowse()
-  local b = UIA.DB().browse
-  return type(b) == "table" and b.full ~= nil
+-- are there prices at all (Auctionator's last full scan in use)?
+local function HasPrices()
+  local X = WC.External
+  return (X and X.Usable and X:Usable()) and true or false
 end
 
 function Tab:EmptyText(all)
   if #all > 0 then return L.EMPTY_LIST end
   if Scanning() then return L.FLIP_BEST_SCANNING end
-  if not HasBrowse() then return L.FLIP_EMPTY_NODATA end
+  if not HasPrices() then return L.FLIP_EMPTY_NODATA end
   return L.FLIP_EMPTY_NONE
 end
 
@@ -494,13 +490,13 @@ function Tab:Refresh()
   local hiddenCount = #all - #vis
   self.hidden:SetText(hiddenCount > 0 and L.HIDDEN_N:format(hiddenCount) or "")
   self.minButton.wcSync()
-  self.note:SetText(self:BrowseNote())
+  self.note:SetText(self:PriceNote())
 
   local b = self.best
   if not top then
     local text = L.FLIP_BEST_EMPTY
     if Scanning() then text = L.FLIP_BEST_SCANNING
-    elseif #all > 0 or HasBrowse() then text = L.FLIP_EMPTY_NONE end
+    elseif #all > 0 or HasPrices() then text = L.FLIP_EMPTY_NONE end
     UI:ShowBest(b, false, text)
     return
   end

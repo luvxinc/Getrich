@@ -138,8 +138,14 @@ function DE:Band(itemID, ilvl)
     local c, loc = instantClass(itemID)
     if c and ((c ~= 2 and c ~= 4) or NOT_GEAR_SLOT[loc or ""]) then return nil, "notgear" end
     if DE.noDE[itemID] then return nil, "nodisenchant" end
-    WC.RequestItem(itemID)
-    return nil, "loading"
+    -- not loaded yet: the built-in item table (DataItems.lua) knows the quality, class and level of tradeable gear
+    local q, cls, lvl = nil, nil, nil
+    if WC.StaticGear then q, cls, lvl = WC.StaticGear(itemID) end
+    if not q then
+      WC.RequestItem(itemID)
+      return nil, "loading"
+    end
+    quality, classID, itemLevel, equipLoc = q, cls, lvl, "INVTYPE_STATIC"
   end
   if (classID ~= 2 and classID ~= 4) or NOT_GEAR_SLOT[equipLoc or ""] then return nil, "notgear" end
   if not quality or quality < 2 or quality > 4 then return nil, "quality" end

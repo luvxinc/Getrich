@@ -1,5 +1,10 @@
 """Run the Getrich addon (formerly Waylaid Crate) against a mocked WoW client + Auction House (LuaJIT via lupa).
 
+The crate / writ maths of 1.3.0 on a small independent mock (tests/test_merge.py has the strict one). Since 2026.11.2
+Getrich does not scan the Auction House itself: what a 1.3.0 scan searched is searched here with a test-only Scanner
+kind (search_all), so the same order books give the same numbers; the last part runs the 2026.11.2 flow (prices from
+an Auctionator stand-in, nothing searched when the Auction House opens, the check button searches the best entries).
+
 usage: python3 tests/mock_test.py [ADDON_DIR] [LOCALE] [SCENARIO]
   LOCALE   enUS | zhCN | zhTW        (default enUS)
   SCENARIO full | close             (default full)
@@ -260,21 +265,54 @@ end
 DONE[94213] = true                                 -- Lesser Mana Potion writ done today
 """, WC)
 
+# ---------------------------------------------------------------- what a scan searched until 2026.11.1
+def search_all(what):
+    """Start an exact search of everything the crates / writs tab uses (the test-only Scanner kind 'search_all').
+    what: "crates" | "writs" (the writs, then the items of the writs that are for sale; of all with hideNoWrit off)."""
+    return lx(r"""
+local WC, what = ...
+local function crateItems()
+  local list, seen = {}, {}
+  local function add(id) if not seen[id] then seen[id] = true; list[#list + 1] = id end end
+  for _, c in ipairs(WC.CRATES) do add(c.id); for _, o in ipairs(c.opts) do add(o[1]) end end
+  return list
+end
+local function writs() local list = {} for _, w in ipairs(WC.WRITS) do list[#list + 1] = w.writ end return list end
+local function writItems()
+  local list, seen = {}, {}
+  for _, w in ipairs(WC.WRITS) do
+    local _, status = WC:CostFor(w.writ, 1)
+    if (status == "ok" or not GetrichDB.hideNoWrit) and not seen[w.item] then seen[w.item] = true; list[#list + 1] = w.item end
+  end
+  return list
+end
+local phases = (what == "crates") and { { label = "crates", items = crateItems } }
+            or { { label = "writs", items = writs }, { label = "items", items = writItems } }
+WC.Scanner:RegisterKind("search_all", { label = function() return "search all" end, phases = phases })
+return WC.Scanner:Start("search_all")
+""", WC, what)
+
 # ---------------------------------------------------------------- crates tab
 fire("AUCTION_HOUSE_SHOW")
+run(30)
+assert len(lua.eval("SENT")) == 0 and not WC.Scanner.active, "nothing is searched when the Auction House opens"
+print("AH open for 30 s: no query sent | bar:", UI.barText._text)
 if SCENARIO == "close":
+    assert search_all("crates")
     run(12)
+    assert WC.Scanner.active
     fire("AUCTION_HOUSE_CLOSED")
     print("after close: scanning =", WC.Scanner.active, "| bar:", UI.barText._text, "| frame shown:", UI.frame._shown)
     assert not WC.Scanner.active and not UI.frame._shown
     assert lua.eval("TICKERS") == 0
     print("CLOSE SCENARIO PASSED")
     sys.exit(0)
+assert search_all("crates")
 run(400)
 sent = lua.eval("SENT")
 n1 = len(sent)
-print("crates scan: kind =", WC.Scanner.kind, "| queries =", n1, "| bar:", UI.barText._text)
-assert WC.Scanner.kind == "crates" and not WC.Scanner.active
+print("crates search: queries =", n1, "| bar:", UI.barText._text)
+assert n1 > 100 and not WC.Scanner.active
 
 ev = lx("local WC = ... ; return WC:EvaluateCrates()", WC)
 by = {}
@@ -301,7 +339,7 @@ crate_prices_before = {c: by[c].crateCost for c in by}
 # ---------------------------------------------------------------- writs tab
 UI.SelectTab(UI, "writs")
 assert db.tab == "writs" and WRIT_TAB.panel._shown and not CRATE_TAB.panel._shown
-WC.Scanner.Start(WC.Scanner, "writs")
+assert search_all("writs")
 run(900)
 sent = lua.eval("SENT")
 writ_q = [sent[i].id for i in range(n1 + 1, len(sent) + 1)]
@@ -402,7 +440,7 @@ print("crate prices kept after writ scan; Unstable Trigger still priced for crat
 # full writ scan with the 'not for sale' filter off scans every requested item
 db.hideNoWrit = False
 before = len(lua.eval("SENT"))
-WC.Scanner.Start(WC.Scanner, "writs")
+assert search_all("writs")
 run(1500)
 sent = lua.eval("SENT")
 q = [sent[i].id for i in range(before + 1, len(sent) + 1)]
@@ -410,8 +448,72 @@ print("writ scan with filter off: queries =", len(q), "items:", len(set(x for x 
 assert len(set(x for x in q if x < 264000)) == 150
 
 # saved results format (2 = 1.3.0, 3 = 2026.10.x with the same results layout)
-assert db.resultsFormat in (2, 3) and db.scannedAt.writs and db.scannedAt.crates
+assert db.resultsFormat in (2, 3)
 # nothing ticks while idle, and no tab raised an error
+assert lua.eval("TICKERS") == 0, lua.eval("TICKERS")
+errs = UI.errors
+assert errs is None or len(errs) == 0, [errs[i] for i in range(1, len(errs) + 1)]
+
+# ---------------------------------------------------------------- 2026.11.2: prices from Auctionator, check buttons
+db.hideNoWrit = True
+assert not WC.Scanner.Start(WC.Scanner, "crates"), "without Auctionator there is nothing to check"
+fire("AUCTION_HOUSE_CLOSED")
+# an Auctionator stand-in that has scanned this Auction House a moment ago: the cheapest price of everything listed
+lx(r"""
+local prices = {}
+for id, rows in pairs(BOOK) do
+  local min
+  for _, r in ipairs(rows) do if not min or r[1] < min then min = r[1] end end
+  if min then prices[id] = min end
+end
+local function check(id) if type(id) ~= "string" or id == "" then error("Invalid callerID") end end
+Auctionator = { API = { v1 = {
+  GetAuctionPriceByItemID = function(callerID, itemID) check(callerID); return prices[itemID] end,
+  GetAuctionAgeByItemID = function(callerID, itemID) check(callerID); return prices[itemID] and 0 or nil end,
+  RegisterForDBUpdate = function(callerID, fn) check(callerID) end,
+} } }
+""")
+X = WC.External
+X.Invalidate(X)
+assert X.Usable(X), X.Describe(X)
+# the order books searched above are older than nothing here (same prices): they stand; forget them to see estimates
+lx("for k in pairs(GetrichDB.results) do GetrichDB.results[k] = nil end")
+WC.Fire(WC, "PRICES_UPDATED", "test")
+ev = lx("local WC = ... ; return WC:VisibleCrates(WC:EvaluateCrates())", WC)
+ranked = [ev[i] for i in range(1, len(ev) + 1) if ev[i].perFavor is not None]
+assert len(ranked) >= 15 and all(e.est for e in ranked), "crates ranked from Auctionator's prices, all estimates"
+# estimate = cheapest price x quantity (a lower bound of the order-book cost)
+for e in ranked:
+    o = e.opts[e.bestIdx]
+    assert fabs(o.cost - lx("return ...", min(r[1] for r in lua.eval("BOOK")[o.itemID].values()) * o.qty)) < 1e-9
+print("2026.11.2: %d crates ranked from Auctionator's prices (estimates), nothing searched" % len(ranked))
+fire("AUCTION_HOUSE_SHOW")
+run(30)
+before = len(lua.eval("SENT"))
+assert not WC.Scanner.active, "no scan starts when the Auction House opens"
+ok = WC.Scanner.Start(WC.Scanner, "crates")
+assert ok and WC.Scanner.kind == "crates"
+run(200)
+sent = lua.eval("SENT")
+q = set(sent[i].id for i in range(before + 1, len(sent) + 1))
+assert not WC.Scanner.active and 5 <= len(q) <= 60, len(q)
+ev = lx("local WC = ... ; return WC:VisibleCrates(WC:EvaluateCrates())", WC)
+top = [ev[i] for i in range(1, 6)]
+assert all(not e.est for e in top), "the best five crates are exact after the check"
+assert ev[1].crate.en == "Expert Parts"
+print("crates check: %d items searched; best five exact; best: %s | bar: %s" % (len(q), ev[1].crate.en, UI.barText._text))
+before = len(sent)
+UI.SelectTab(UI, "writs")
+ok = WC.Scanner.Start(WC.Scanner, "writs")
+assert ok and WC.Scanner.kind == "writs"
+run(200)
+sent = lua.eval("SENT")
+q = set(sent[i].id for i in range(before + 1, len(sent) + 1))
+assert not WC.Scanner.active and 2 <= len(q) <= 30, len(q)
+print("writs check: %d items searched | bar: %s" % (len(q), UI.barText._text))
+assert db.scannedAt.writs and db.scannedAt.crates
+assert lua.eval("TICKERS") == 1, "with the AH open only the look at Auctionator's prices ticks"
+fire("AUCTION_HOUSE_CLOSED")
 assert lua.eval("TICKERS") == 0, lua.eval("TICKERS")
 errs = UI.errors
 assert errs is None or len(errs) == 0, [errs[i] for i in range(1, len(errs) + 1)]

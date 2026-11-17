@@ -8,7 +8,7 @@ local addonName, WC = ...
 --   Leveling:Chance(rec, skill[, current])        -> chance 0..1, color ("orange"|"yellow"|"green"|"grey"|"red"), est
 --   Leveling:Candidates(charKey, skillLine, skill) -> entries, sorted by cost per skill point (missing prices last)
 --   Leveling:Plan(charKey, skillLine, from, to)    -> route { from, to, steps, mats, total, learn, missing, ... }
---   Leveling:ScanItems(charKey)                    -> reagent set, product set (for the "craft" scan kind)
+--   Leveling:ScanItems(charKey)                    -> reagent set, product set of the recipes the planner can use next
 --   Leveling:Skill(charKey, skillLine)             -> rank, max
 -- Skill-up chance (Classic rule, WC.SKILLUP): below yellow = 1; yellow..grey = (grey - skill) / (grey - yellow);
 -- grey or higher = 0. Green starts at floor((yellow + grey) / 2).
@@ -543,7 +543,9 @@ function Leveling:Plan(charKey, skillLine, fromSkill, toSkill)
 end
 
 -- ---------------------------------------------------------------------------
--- craft scan: reagents + products of the recipes useful in [skill, min(target, skill + 50)] of every profession
+-- reagents + products of the recipes useful in [skill, min(target, skill + 50)] of every profession. Until
+-- 2026.11.1 this was what the crafting scan searched; prices come from Auctionator now, and the tab's check button
+-- searches the route on screen (Profit:CheckItems). The test suite still searches this list exactly.
 
 -- does a recipe give points somewhere in [lo, hi)? s = learn skill (nil for a learned recipe)
 local probe = {}

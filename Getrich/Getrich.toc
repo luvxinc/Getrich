@@ -2,13 +2,13 @@
 ## Title: Getrich
 ## Title-zhCN: Getrich 挣钱助手
 ## Title-zhTW: Getrich 賺錢助手
-## Notes: Money-making helper for WoW Forever: AH-to-vendor flips, crafting profit and skill-up planning, disenchanting, price history, Waylaid Crates and Craftsman's Writs.
-## Notes-zhCN: 魔兽世界 Forever 挣钱助手：拍卖行低于卖店价的倒卖、制造利润和冲技能规划、附魔分解、价格走势、Waylaid Crate 和 Craftsman's Writ。
-## Notes-zhTW: 魔獸世界 Forever 賺錢助手：拍賣場低於賣店價的倒賣、製造利潤和衝技能規劃、附魔分解、價格走勢、Waylaid Crate 和 Craftsman's Writ。
+## Notes: Money-making helper for WoW Forever: AH-to-vendor flips, crafting profit and skill-up planning, disenchanting, price history, Waylaid Crates and Craftsman's Writs. Prices come from Auctionator's full scans (required).
+## Notes-zhCN: 魔兽世界 Forever 挣钱助手：拍卖行低于卖店价的倒卖、制造利润和冲技能规划、附魔分解、价格走势、Waylaid Crate 和 Craftsman's Writ。价格来自 Auctionator 的全扫描（必须安装）。
+## Notes-zhTW: 魔獸世界 Forever 賺錢助手：拍賣場低於賣店價的倒賣、製造利潤和衝技能規劃、附魔分解、價格走勢、Waylaid Crate 和 Craftsman's Writ。價格來自 Auctionator 的全掃描（必須安裝）。
 ## Author: Aaron Tong
 ## X-Email: Luvx.inc@gmail.com
 ## X-Website: https://github.com/luvxinc/Getrich
-## Version: 2026.11.1
+## Version: 2026.11.2
 ## X-Released: 2026-11-16
 ## IconTexture: Interface\Icons\INV_Misc_Coin_02
 ## OptionalDeps: Auctionator
@@ -21,6 +21,7 @@ Writs.lua
 DataVendor.lua
 DataDisenchant.lua
 DataRecipes.lua
+DataItems.lua
 Store.lua
 External.lua
 Scanner.lua

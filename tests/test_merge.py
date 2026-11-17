@@ -126,7 +126,7 @@ def copper_text(copper, locale="enUS"):
 
 
 def start_scan(c, kind, timeout=900):
-    """Start a scan kind and run the clock until the scanner finished. Returns the seconds it took."""
+    """Press a tab's check button (Scanner kind) and run the clock until it finished. Returns ok, seconds."""
     WC = c.WC
     t0 = c.now()
     ok = WC.Scanner.Start(WC.Scanner, kind)
@@ -134,8 +134,172 @@ def start_scan(c, kind, timeout=900):
     return ok, c.now() - t0
 
 
+# Until 2026.11.1 a scan searched everything a tab uses; since 2026.11.2 prices come from Auctionator and a check
+# only searches the best entries. The price maths (order books, bundles, profits, routes) is still tested on exact
+# order books of everything: these lists are what the old scans searched, and search_exact() searches them with a
+# test-only Scanner kind.
+OLD_SCAN_LIST = r'''
+local WC, kind, all = ...
+local list, seen = {}, {}
+local function add(id) if type(id) == "number" and not seen[id] then seen[id] = true; list[#list + 1] = id end end
+local function sorted(set) local t = {} for id in pairs(set) do t[#t + 1] = id end table.sort(t) return t end
+if kind == "crates" then
+  for _, c in ipairs(WC.CRATES) do add(c.id); for _, o in ipairs(c.opts) do add(o[1]) end end
+elseif kind == "writs" then
+  for _, w in ipairs(WC.WRITS) do add(w.writ) end
+elseif kind == "writ_items" then
+  for _, w in ipairs(WC.WRITS) do
+    local _, status = WC:CostFor(w.writ, 1)
+    if all or status == "ok" then add(w.item) end
+  end
+elseif kind == "de" then
+  for _, id in ipairs(sorted(WC.DE.mats)) do add(id) end
+elseif kind == "craft" then
+  -- materials (not the ones a confirmed unlimited vendor sells) and products of the character's recipes and of
+  -- its skill-up candidates; the disenchanting materials when something it makes is gear and it has Enchanting
+  local charKey = WC:CharKey()
+  local reag, outs = {}, {}
+  local function Reagent(id)
+    if id and reag[id] == nil then
+      local unit, info = WC:VendorPrice(id)
+      reag[id] = not (unit and type(info) == "table" and not info.limited and not info.classic)
+    end
+  end
+  for _, r in pairs(WC.Recipes:ForChar(charKey) or {}) do
+    if type(r) == "table" and r.o then
+      outs[r.o] = true
+      for _, rg in ipairs(type(r.r) == "table" and r.r or {}) do Reagent(tonumber(rg[1] or rg.itemID)) end
+    end
+  end
+  local lr, lo = WC.Leveling:ScanItems(charKey)
+  for id in pairs(lr or {}) do Reagent(id) end
+  for id in pairs(lo or {}) do outs[id] = true end
+  local need = {}
+  for id, search in pairs(reag) do if search then need[id] = true end end
+  for _, id in ipairs(sorted(need)) do add(id) end
+  local anyGear = false
+  for _, id in ipairs(sorted(outs)) do
+    add(id)
+    local _, _, _, _, _, classID = C_Item.GetItemInfoInstant(id)
+    if classID == 2 or classID == 4 then anyGear = true end
+  end
+  local ench = WC:EnchantingSkill(charKey)
+  if anyGear and ench and ench > 0 then for _, id in ipairs(sorted(WC.DE.mats)) do add(id) end end
+end
+return list
+'''
+
+
+def old_scan_list(c, kind, all_items=False):
+    return [int(x) for x in lua_list(c.eval(OLD_SCAN_LIST, c.WC, kind, all_items))]
+
+
+def search_exact(c, items, timeout=3600):
+    """Search `items` exactly, one after the other, as a check does. Returns ok, seconds."""
+    WC = c.WC
+    t0 = c.now()
+    ok = begin_exact(c, items)
+    c.advance(timeout, until=lambda: not WC.Scanner.active)
+    return ok, c.now() - t0
+
+
+def full_search(c, kind, timeout=3600):
+    """Exact order books of everything the tab `kind` uses (what its scan searched until 2026.11.1).
+    kind: crates | writs (the writs, then the items of the writs for sale, or of all with hideNoWrit off) | craft | de."""
+    if kind == "writs":
+        ok, t1 = search_exact(c, old_scan_list(c, "writs"), timeout)
+        items = old_scan_list(c, "writ_items", not c.g("GetrichDB").hideNoWrit)
+        t2 = search_exact(c, items, timeout)[1] if items else 0
+        return ok, t1 + t2
+    return search_exact(c, old_scan_list(c, kind), timeout)
+
+
 def visible_tab_texts(c):
     return c.texts(clip=True)
+
+
+# ---- a stand-in for Auctionator: the only source of prices since 2026.11.2 ----------------------------------------
+def install_auctionator(c):
+    """Auctionator's add-on API (Auctionator.API.v1). Auctionator.prices[itemID] = { cheapest unit price, age in days }.
+    Installed before login when Getrich should be told about updates (RegisterForDBUpdate), else any time."""
+    c.eval("""
+      if rawget(_G, "Auctionator") then return end
+      local A = { API = { v1 = {} }, callbacks = {}, prices = {}, calls = 0 }
+      local function check(id)
+        A.calls = A.calls + 1
+        if type(id) ~= "string" or id == "" then error("Invalid callerID. Use the name of your add-on.") end
+      end
+      function A.API.v1.GetAuctionPriceByItemID(callerID, itemID) check(callerID); local p = A.prices[itemID]; return p and p[1] or nil end
+      function A.API.v1.GetAuctionAgeByItemID(callerID, itemID) check(callerID); local p = A.prices[itemID]; return p and p[2] or nil end
+      function A.API.v1.RegisterForDBUpdate(callerID, fn) check(callerID); A.callbacks[#A.callbacks + 1] = fn end
+      rawset(_G, "Auctionator", A)""")
+
+
+# crate materials whose crates are not listed in the test markets (nothing ranks from them)
+AUC_BACKGROUND_CRATE = [7911, 10620, 11370, 13464, 8838, 8839, 8845, 8846, 13463, 13465, 13466, 13467]
+
+
+def auctionator_update(c, prices, background=0, fire=True):
+    """Auctionator stores `prices` ({itemID: unit price}) as seen today and tells its listeners.
+    background = a price: the update also saw 12 other crate materials and the items of the first 8 writs at about
+    that price, like a full scan does (Getrich recognises a full scan by many crate and writ items).
+    background = 0: only `prices`, like a search for those items."""
+    install_auctionator(c)
+    c.eval("""local WC, prices, bg, crateBg, fire = ...
+      local A = Auctionator
+      for id, p in pairs(prices) do A.prices[id] = { p, 0 } end
+      if bg > 0 then
+        for _, id in pairs(crateBg) do if not prices[id] then A.prices[id] = { bg, 0 } end end
+        for i = 1, 8 do local id = WC.WRITS[i].item; if not prices[id] then A.prices[id] = { bg + i, 0 } end end
+      end
+      if fire then for _, fn in ipairs(A.callbacks) do fn() end end""",
+           c.WC, c.lua.table_from(prices), background, c.lua.table_from(AUC_BACKGROUND_CRATE), fire)
+    if fire:
+        c.advance(0.3)        # Getrich looks a moment after Auctionator's callback (External.lua LookSoon)
+    c.eval("local WC = ...; WC.External:Invalidate()", c.WC)
+
+
+def auctionator_scan_ah(c, background=500000, fire=True):
+    """Auctionator runs a full scan of the mock Auction House: the cheapest listing of every item that is listed
+    (plus the background of auctionator_update). Returns {itemID: price}."""
+    t = c.eval("""local M = ...
+      local out = {}
+      for id, l in pairs(M.AH.listings) do
+        local min
+        for _, r in ipairs(l.rows or {}) do if r.unit and (not min or r.unit < min) then min = r.unit end end
+        if min then out[id] = min end
+      end
+      return out""", c.M)
+    prices = {int(k): int(t[k]) for k in t.keys()}
+    auctionator_update(c, prices, background=background, fire=fire)
+    return prices
+
+
+def auctionator_new_day(c):
+    """Auctionator's day counter moves on: everything it knows is one day older."""
+    c.eval("for _, p in pairs(Auctionator.prices) do p[2] = p[2] + 1 end")
+    c.eval("local WC = ...; WC.External:Invalidate()", c.WC)
+
+
+def ext_state(c):
+    """(usable, why) of External.lua, freshly computed."""
+    return multi(c.eval("local WC = ...; local X = WC.External; X:Invalidate(); local s = X:State(); return X:Usable(), s.why", c.WC), 2)
+
+
+def crate_entry(c, crate_id):
+    return [e for e in lua_list(c.eval("local WC = ...; return WC:EvaluateCrates()", c.WC)) if e.crate.id == crate_id][0]
+
+
+def begin_exact(c, items):
+    """Start an exact search of `items` (test-only kind) without waiting for it. Returns ok."""
+    WC = c.WC
+    c.eval("""local WC, ids = ...
+      local list = {}
+      for i = 1, #ids do list[i] = ids[i] end
+      WC.Scanner:RegisterKind("exact", { label = function() return "exact search" end,
+                                         phases = { { label = "items", items = function() return list end } } })""",
+           WC, c.lua.table_from(list(items)))
+    return WC.Scanner.Start(WC.Scanner, "exact")
 
 
 # ===================================================================================================================
@@ -222,19 +386,18 @@ def eval_dump(c):
 
 
 def run_market_130(c, ctx=None):
-    """The 1.3.0 test session: crates scan on AH open, writs scan, writs scan with the filter off.
-    Returns the evaluation dumps after each step."""
+    """The 1.3.0 test session: everything of the Crates tab searched, then the writs (and the items of the writs for
+    sale), then the items of all writs. Returns the evaluation dumps after each step."""
     WC = c.WC
     setup_market_130(c)
     c.open_ah()
-    c.advance(400, until=lambda: WC.Scanner.kind == "crates" and not WC.Scanner.active and c.now() > 1002)
-    c.advance(1)
+    full_search(c, "crates")
     out = {"after_crates": eval_dump(c)}
     WC.UI.SelectTab(WC.UI, "writs")
-    start_scan(c, "writs", 900)
+    full_search(c, "writs")
     out["after_writs"] = eval_dump(c)
     c.g("GetrichDB").hideNoWrit = False
-    start_scan(c, "writs", 1500)
+    full_search(c, "writs")
     out["after_writs_all"] = eval_dump(c)
     return out
 
@@ -339,8 +502,7 @@ def s_130(ctx):
     WC = c.WC
     # 1.3.0 checks (tests/mock_test.py): filters, rank order, bonuses
     db = c.g("GetrichDB")
-    ctx.eq(db.resultsFormat, 3, "resultsFormat after scans")
-    ctx.check(db.scannedAt.crates and db.scannedAt.writs, "scannedAt.crates / .writs set")
+    ctx.eq(db.resultsFormat, 3, "resultsFormat after the searches")
     vis = lua_list(c.eval("local WC = ...; return WC:VisibleCrates(WC:EvaluateCrates())", WC))
     names = [v.crate.en for v in vis]
     ctx.check("Apprentice Ore" not in names and "Apprentice Herbs" not in names, "default crate filters hide Ore/Herbs: %s" % names)
@@ -374,7 +536,6 @@ def s_rows(ctx):
     c.set_listings(2770, [(5, 1), (6, 1), (7, 100), (8, 100)])       # 4 rows, first page = 2 rows (2 units)
     for i in (2589, 1273, 2770):
         WC.Store.SetWatch(WC.Store, i, True)
-    c.g("GetrichDB").autoScan = False
     c.open_ah()
     c.advance(1)
     ok, secs = start_scan(c, "history", 120)
@@ -418,12 +579,11 @@ def s_noise(ctx):
             crate_items.add(int(o[1]))
     c.set_listings(2835, [(3, 40)])            # not a crate item: Blizzard's UI will search it
     c.set_listings(1273, [(1000, 1)])
-    c.g("GetrichDB").autoScan = False
     c.open_ah()
     c.advance(1)
     chat0 = len(c.chat)
-    ok = WC.Scanner.Start(WC.Scanner, "crates")
-    ctx.require(ok, "Scanner:Start('crates') refused")
+    ok = begin_exact(c, sorted(crate_items))
+    ctx.require(ok, "the exact search of all crate items did not start")
     step, noise = 0, 0
     while WC.Scanner.active and step < 2000:
         step += 1
@@ -450,7 +610,7 @@ def s_noise(ctx):
             c.fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2835)
             c.fire("ITEM_SEARCH_RESULTS_UPDATED", c.eval("return C_AuctionHouse.MakeItemKey(1273)"), None)
         noise += 1
-    ctx.check(not WC.Scanner.active, "crates scan still running after %d s of noise" % int(step * 0.3))
+    ctx.check(not WC.Scanner.active, "the search is still running after %d s of noise" % int(step * 0.3))
     ctx.check(len(c.chat) > chat0, "no chat line when the scan finished: %s" % c.chat[-3:])
     res = c.g("GetrichDB").results
     missing, wrong = [], []
@@ -481,7 +641,7 @@ def s_noise(ctx):
 FLIP_LISTINGS = {
     # itemID: rows (unit, qty)                     sell price (items.json)
     4306: [(100, 5), (140, 10), (160, 200)],       # Silk Cloth, sell 150
-    1273: [(1000, 1)],                             # Forest Chain (gear), sell 1656
+    4800: [(565, 1)],                              # Mighty Chain Pants (green armor, bind on equip), sell 1221
     4338: [(200, 3), (300, 50)],                   # Mageweave Cloth, sell 250 (cheap row bought before our search)
     2592: [(40, 20)],                              # Wool Cloth, sell 33 -> not below vendor
     2589: [(12, 1), (13, 100)],                    # Linen Cloth, sell 13
@@ -504,7 +664,6 @@ def flip_market(c):
     c.clear_listings()
     for iid, rows in FLIP_LISTINGS.items():
         c.set_listings(iid, rows)
-    c.M.AH.browsePageSize = 4          # 12 browse rows -> 3 pages
 
 
 def flip_dump(c):
@@ -512,45 +671,45 @@ def flip_dump(c):
     return [(int(e.itemID), e.status, None if e.qty is None else int(e.qty), fnum(e.profit), fnum(e.cost), fnum(e.unit), fnum(e.perUnit)) for e in lst]
 
 
-@scenario("flips_scan", "flips: browse 3 pages -> candidates -> targeted searches -> exact profit, 'gone' when the cheap listing vanished")
+@scenario("flips_scan", "flips: Auctionator's prices -> candidates -> exact searches -> exact profit, 'gone' when the cheap listing vanished")
 def s_flips(ctx):
-    c = ctx.client()
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
     WC = c.WC
     flip_market(c)
     count_price_fires(c)
-    c.g("GetrichDB").autoScan = False
     c.open_ah()
     c.advance(1)
+    ctx.eq(flip_dump(c), [], "no flips before Auctionator has scanned")
+    ok = WC.Scanner.Start(WC.Scanner, "flips")
+    ctx.check(not ok, "nothing to check without prices")
+    auctionator_scan_ah(c)
+    ctx.eq(ext_state(c), (True, None), "Auctionator's full scan is in use")
+    # candidates, biggest gain per item first (sell - cheapest): Mighty Chain Pants 1221 - 565 = 656; Silk 150 - 100 = 50;
+    # Mageweave 250 - 200 = 50 (tie -> lower itemID first); Medium Leather 50 - 49 = 1; Linen 13 - 12 = 1.
+    # Wool 40 >= 33 and the crate (vendors don't buy it) are not candidates.
+    cand = [int(x) for x in lua_list(WC.Profit.FlipCandidates(WC.Profit, 80))]
+    ctx.eq(cand, [4800, 4306, 4338, 2319, 2589], "FlipCandidates(80)")
+    got = [(i, st, q, pr) for (i, st, q, pr, _, _, _) in flip_dump(c)]
+    ctx.eq(got, [(4800, "est", None, 656.0), (4306, "est", None, 50.0), (4338, "est", None, 50.0),
+                 (2319, "est", None, 1.0), (2589, "est", None, 1.0)], "before a check: estimates, quantity unknown")
     ok = WC.Scanner.Start(WC.Scanner, "flips")
     ctx.require(ok, "Scanner:Start('flips') refused")
-    # run until the first targeted search went out, then the cheap Mageweave row is bought by someone
+    # run until the first search went out, then the cheap Mageweave row is bought by someone
     c.advance(120, until=lambda: c.ah_stats()["searches"] >= 1 or not WC.Scanner.active)
     c.set_listings(4338, [(300, 50)])
     c.advance(300, until=lambda: not WC.Scanner.active)
-    ctx.require(not WC.Scanner.active, "flips scan did not finish")
+    ctx.require(not WC.Scanner.active, "the flips check did not finish")
     st = c.ah_stats()
-    ctx.eq(st["browses"], 1, "browse queries sent")
-    db = c.g("GetrichDB")
-    items = db.browse["items"]
-    got = {int(k): (int(items[k].min), int(items[k].qty)) for k in lua_keys(items)}
-    # browse rows = cheapest unit + total units per itemKey: Silk 100/215, Mageweave 200/53, Linen 12/101 ...
-    exp = {iid: (min(u for u, q in rows), sum(q for u, q in rows)) for iid, rows in FLIP_LISTINGS.items()}
-    ctx.eq(got, exp, "db.browse.items after 3 pages (min, qty)")
-    ctx.eq(int(items[1273].ilvl or 0), 25, "browse ilvl for gear (Forest Chain itemKey.itemLevel)")
-    ctx.check(db.browse.full, "db.browse.full timestamp not set")
-    # candidates: (sell - min) x min(qty, 20):
-    #   Silk (150-100) x 20 = 1000; Mageweave (250-200) x 20 = 1000 (tie -> lower itemID first); Forest Chain 656 x 1 = 656;
-    #   Linen (13-12) x 20 = 20; Medium Leather (50-49) x 2 = 2; Wool 40 >= 33 and the crate (sell 0) are not candidates
-    cand = [int(x) for x in lua_list(WC.Profit.FlipCandidates(WC.Profit, 80))]
-    ctx.eq(cand, [4306, 4338, 1273, 2589, 2319], "FlipCandidates(80)")
-    searched = set(st["searchByItem"].keys())
-    ctx.eq(searched, {4306, 4338, 1273, 2589, 2319}, "items searched in phase 2")
-    # Flips (order book after the browse):
-    #   Forest Chain: 1 x (1656-1000) = 656, cost 1000
+    ctx.eq(st["browses"], 0, "no browse query: Getrich does not read the whole Auction House")
+    ctx.eq(set(st["searchByItem"].keys()), {4306, 4338, 4800, 2589, 2319}, "items searched by the check")
+    # Flips (order books):
+    #   Mighty Chain Pants: 1 x (1221-565) = 656, cost 565
     #   Silk: 5 x (150-100) + 10 x (150-140) = 250 + 100 = 350, qty 15, cost 5x100 + 10x140 = 1900
     #   Medium Leather: 2 x (50-49) = 2, cost 98;  Linen: 1 x (13-12) = 1, cost 12 (the 13c row is not below 13)
-    #   Mageweave: searched after the browse, nothing below 250 any more -> "gone", last
-    exp = [(1273, "ok", 1, 656.0, 1000.0, 1000.0, 656.0),
+    #   Mageweave: searched after Auctionator's scan, nothing below 250 any more -> "gone", last
+    exp = [(4800, "ok", 1, 656.0, 565.0, 565.0, 656.0),
            (4306, "ok", 15, 350.0, 1900.0, 100.0, 50.0),
            (2319, "ok", 2, 2.0, 98.0, 49.0, 1.0),
            (2589, "ok", 1, 1.0, 12.0, 12.0, 1.0)]
@@ -558,21 +717,22 @@ def s_flips(ctx):
     ctx.eq(got[:4], exp, "Profit:Flips() ok entries")
     ctx.check(len(got) == 5 and got[4][0] == 4338 and got[4][1] == "gone" and got[4][3] in (0, 0.0, None),
               "Mageweave should be the last entry with status 'gone': %s" % got[4:])
-    # CostForAny: search newer than browse -> order book; browse only -> min x qty "est"
+    # CostForAny: searched -> order book; only Auctionator -> cheapest x qty "est" (it does not know how many)
     cost, status, info = multi(WC.CostForAny(WC, 4306, 10), 3)
     ctx.eq((cost, status, info and info.source), (1200, "ok", "search"), "CostForAny(Silk, 10) = 5x100 + 5x140")
     cost, status, info = multi(WC.CostForAny(WC, 2770, 5), 3)
-    ctx.eq((cost, status, info and info.source), (150, "est", "browse"), "CostForAny(Copper Ore, 5) from the browse = 5 x 30")
+    ctx.eq((cost, status, info and info.source), (150, "est", "auctionator"), "CostForAny(Copper Ore, 5) from Auctionator = 5 x 30")
     cost, status, info = multi(WC.CostForAny(WC, 2770, 25), 3)
-    ctx.eq(status, "short", "CostForAny(Copper Ore, 25): browse says only 20 listed")
+    ctx.eq((cost, status), (750, "est"), "CostForAny(Copper Ore, 25): 25 x 30, although only 20 are listed (not known)")
     up = multi(WC.UnitPrice(WC, 2770), 3)
-    ctx.eq((up[0], up[2]), (30, "browse"), "UnitPrice(Copper Ore) from the browse")
-    # history from the browse: relevant items only (Copper Ore is a crate material, Forest Chain is not relevant)
+    ctx.eq((up[0], up[2]), (30, "auctionator"), "UnitPrice(Copper Ore) from Auctionator")
+    ctx.eq(multi(WC.CostForAny(WC, 2775, 5), 2), (None, "none"), "Silver Ore: not seen in the full scan -> not for sale")
+    # history from the scan Getrich watched: relevant items only (Copper Ore is a crate material, Forest Chain is not)
     H = c.server_time() // 3600
     hist = c.g("GetrichDB").history
     rec = hist[2770] and hist[2770].h[H]
-    ctx.eq(rec and (int(rec.min), int(rec.qty)), (30, 20), "browse wrote history for relevant Copper Ore")
-    ctx.eq(hist[1273], None, "no history for Forest Chain (not relevant)")
+    ctx.eq(rec and (int(rec.min), rec.qty), (30, None), "the scan wrote history for Copper Ore (cheapest price, quantity unknown)")
+    ctx.eq(hist[4800], None, "no history for Mighty Chain Pants (not an item Getrich follows)")
     # PRICES_UPDATED at most ~4 per second
     times = sorted(float(x) for x in lua_list(c.M.priceFires)) if id(c) in PRICE_FIRES else []
     worst = max([sum(1 for u in times if t0 <= u < t0 + 1.0) for t0 in times] or [0])
@@ -580,131 +740,77 @@ def s_flips(ctx):
     # tab
     c.slash("/wc flips")
     t = c.texts(clip=True)
-    ctx.check(any("Forest Chain" in x for x in t), "flips tab does not list Forest Chain: %s" % t[:30])
+    ctx.check(any("Mighty Chain Pants" in x for x in t), "flips tab does not list Mighty Chain Pants: %s" % t[:30])
     tip = "\n".join(c.hover_text("Silk Cloth"))
     for need in (ctx.money(100), ctx.money(150), "15", ctx.money(1900), ctx.money(350)):
         ctx.check(need in tip, "Silk Cloth flip tooltip lacks %r:\n%s" % (need, tip))
     ctx.check(any(ctx.money(656) in x for x in t), "flips tab does not show the 656c profit (%s)" % ctx.money(656))
     ctx.check(any(ctx.money(350) in x for x in t), "flips tab does not show Silk's 350c profit (%s)" % ctx.money(350))
+    ctx.check(any("Auctionator" in x for x in t), "the tab does not say where the prices are from: %s" % t[:12])
     check_clean(ctx, c)
 
 
-@scenario("flips_fresh_login", "flips on a fresh login (nothing in the item cache): candidates still found once item data arrives")
+@scenario("flips_fresh_login", "flips on a fresh login (nothing in the item cache): found from the built-in vendor prices, exact once the item data arrives")
 def s_flips_fresh(ctx):
     # Real client: C_Item.GetItemInfo (sell price) is nil for items not seen this session until requested + loaded.
-    # After a full browse most rows are such items; the search phase must not silently skip them.
+    # Auctionator's prices are there right after login; the built-in item table (DataItems.lua) says what a vendor
+    # pays, so the candidates are known without loading anything.
     c = ctx.client(cached=False)
     WC = c.WC
     flip_market(c)
-    c.g("GetrichDB").autoScan = False
+    auctionator_scan_ah(c, fire=False)       # Auctionator's data from an earlier session
+    ctx.eq(ext_state(c), (True, None), "prices right after login, Auction House closed")
+    cand = [int(x) for x in lua_list(WC.Profit.FlipCandidates(WC.Profit, 80))]
+    ctx.eq(cand, [4800, 4306, 4338, 2319, 2589], "FlipCandidates with a cold item cache")
     c.open_ah()
     c.advance(1)
     ok = WC.Scanner.Start(WC.Scanner, "flips")
     ctx.require(ok, "Scanner:Start('flips') refused")
     c.advance(300, until=lambda: not WC.Scanner.active)
     searched = set(c.ah_stats()["searchByItem"].keys())
-    ctx.eq(searched, {4306, 4338, 1273, 2589, 2319},
-           "items searched in phase 2 with a cold item cache (candidates whose sell price was still loading were skipped?)")
+    ctx.eq(searched, {4306, 4338, 4800, 2589, 2319}, "items searched with a cold item cache")
+    c.advance(5)
     got = {e[0]: e[1] for e in flip_dump(c)}
-    ctx.eq(got.get(1273), "ok", "Forest Chain flip status after the scan (cold item cache)")
+    ctx.eq(got.get(4800), "ok", "Mighty Chain Pants flip status after the check (cold item cache)")
     check_clean(ctx, c)
 
 
-def foreign_market(c, n=40):
-    """n plain items (quality 1, sell 100+i) listed at 50 + (i*7) % 300 x 3; browse pages of 5 rows."""
-    c.clear_listings()
-    for i in range(n):
-        iid = 800000 + i
-        c.add_item(iid, "Market Item %d" % i, quality=1, ilvl=10, classID=7, sell=100 + i, cached=True)
-        c.set_listings(iid, [(50 + (i * 7) % 300, 3)])
-    c.M.AH.browsePageSize = 5
-
-
-@scenario("browse_foreign_list", "review: a Favorites list (SearchForFavorites / a whole new BROWSE_RESULTS_UPDATED) during our full browse never wipes the snapshot")
-def s_browse_foreign(ctx):
-    for how in ("favorites", "raw_updated"):
-        c = ctx.client()
-        WC = c.WC
-        foreign_market(c)
-        c.g("GetrichDB").autoScan = False
-        c.open_ah()
-        c.advance(1)
-        ok, _ = start_scan(c, "flips")
-        ctx.require(ok and not WC.Scanner.active, "%s: first flips scan did not run" % how)
-        db = c.g("GetrichDB")
-        ctx.eq(len(lua_keys(db.browse["items"])), 40, "%s: snapshot after a complete full browse" % how)
-        stamp = db.browse.full
-        ctx.check(stamp is not None, "%s: db.browse.full not stamped after a complete browse" % how)
-        c.advance(5)
-        ok = WC.Scanner.Start(WC.Scanner, "flips")
-        ctx.require(ok, "%s: second flips scan refused" % how)
-        # 8 pages of 5: wait until our 3rd page is in and the next page request is in flight
-        c.advance(120, until=lambda: WC.Scanner.browse is not None and WC.Scanner.browse.pages >= 3 and WC.Scanner.browse.state == "sent")
-        ctx.require(WC.Scanner.browse is not None and WC.Scanner.browse.pages >= 3, "%s: browse did not reach page 3" % how)
-        if how == "favorites":
-            c.ah_blizzard_favorites([800001, 800002])          # Blizzard's Favorites button (hooked call)
-        else:
-            # the same list change arriving without our hook seeing the call (Blizzard_AuctionHouseFrame.lua:760-772)
-            c.eval("""local AH = __WOWMOCK.AH
-              AH.browse = { results = {
-                { itemKey = { itemID = 800001, itemLevel = 0, itemSuffix = 0, battlePetSpeciesID = 0 }, totalQuantity = 3, minPrice = 57, containsOwnerItem = false },
-                { itemKey = { itemID = 800002, itemLevel = 0, itemSuffix = 0, battlePetSpeciesID = 0 }, totalQuantity = 3, minPrice = 64, containsOwnerItem = false } },
-                full = true, pages = {}, delivered = 0, query = {} }
-              __WOWMOCK.fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")""")
-        c.advance(400, until=lambda: not WC.Scanner.active)
-        ctx.require(not WC.Scanner.active, "%s: scan did not finish after the foreign list" % how)
-        ctx.eq(len(lua_keys(db.browse["items"])), 40, "%s: snapshot kept (an interrupted browse deletes nothing)" % how)
-        ctx.eq(db.browse.full, stamp, "%s: db.browse.full not re-stamped by an interrupted browse" % how)
-        check_clean(ctx, c, how)
-
-
-@scenario("gear_random_suffix", "review: random-suffix gear is searched with the browse row's exact itemKey (level + suffix); 'gone' only from that key")
+@scenario("gear_random_suffix", "a search that finds nothing proves nothing for gear (random suffixes are listed under their own key): the flip stays an estimate")
 def s_gear_suffix(ctx):
     c = ctx.client()
     WC = c.WC
     c.clear_listings()
-    # a green sword with two random suffixes ("of the Monkey" 1201 cheap, "of the Bear" 1202 dear); vendor pays 1000c
-    c.add_item(900001, "Mock Sword", quality=2, ilvl=20, classID=2, equipLoc="INVTYPE_WEAPON", sell=1000, stack=1, cached=True)
-    c.set_listings(900001, [{"unit": 400, "qty": 1, "sfx": 1201}, {"unit": 1500, "qty": 1, "sfx": 1202}], commodity=False)
-    c.g("GetrichDB").autoScan = False
+    # Mighty Chain Pants (green armor, vendor pays 1221c) listed with two random suffixes; Linen Cloth (not gear) at 12c
+    c.set_listings(4800, [{"unit": 400, "qty": 1, "sfx": 1201}, {"unit": 1500, "qty": 1, "sfx": 1202}], commodity=False)
+    c.set_listings(2589, [(12, 1), (13, 100)])
     c.open_ah()
     c.advance(1)
+    auctionator_scan_ah(c)
+    got = {e[0]: e for e in flip_dump(c)}
+    ctx.eq(got.get(4800) and got[4800][1:4], ("est", None, 821.0), "Mighty Chain Pants from Auctionator: estimate, 1221 - 400")
+    # the cheap Linen is bought before the check
+    c.set_listings(2589, [(13, 100)])
     ok, _ = start_scan(c, "flips")
-    ctx.require(ok and not WC.Scanner.active, "flips scan did not run")
-    db = c.g("GetrichDB")
-    b = db.browse["items"][900001]
-    ctx.require(b is not None, "sword not in the browse snapshot")
-    # cheapest variant: 400c, suffix 1201, item level 20; units of both variants: 2
-    ctx.eq((int(b.min), int(b.qty), int(b.ilvl or 0), int(b.sfx or 0)), (400, 2, 20, 1201), "browse entry (min, qty, ilvl, sfx)")
-    r = WC.Scanner.results[900001]
-    ctx.require(r is not None, "sword was not searched")
-    # searched with (900001, 20, 1201): the 400c row; without the suffix the AH answers nothing and the flip shows 'gone'
-    ctx.eq((r.status, int(r.min or 0), int(r.sfx or 0)), ("listed", 400, 1201), "search result (status, min, searched suffix)")
+    ctx.require(ok and not WC.Scanner.active, "the flips check did not run")
+    r = WC.Scanner.results[4800]
+    ctx.require(r is not None, "Mighty Chain Pants was not searched")
+    ctx.eq(str(r.status), "none", "(the search without a suffix finds nothing in this mock)")
     got = {e[0]: e for e in flip_dump(c)}
-    ctx.eq(got.get(900001) and got[900001][1:4], ("ok", 1, 600.0), "sword flip (status, qty, profit = 1000 - 400)")
-    # a later 'nothing listed' answer for another key (e.g. a level-0 search) must not turn the flip into 'gone'
-    c.eval("local WC = ...; WC.Scanner.results[900001] = { status = 'none', avail = 0, time = time() + 5 }; WC:Fire('PRICES_UPDATED', 'test')", WC)
-    got = {e[0]: e for e in flip_dump(c)}
-    ctx.eq(got.get(900001) and got[900001][1], "est", "flip status after a 'none' answer for a different key")
+    ctx.eq(got.get(4800) and got[4800][1:4], ("est", None, 821.0), "gear: a search that found nothing does not make it 'gone'")
+    ctx.eq(got.get(2589) and got[2589][1], "gone", "not gear: nothing below the vendor price any more -> gone")
     check_clean(ctx, c)
 
 
-@scenario("flips_estimate", "flips: only browse data (search phase stopped) -> status 'est', profit = sell - min for one unit")
+@scenario("flips_estimate", "flips: only Auctionator's prices (nothing checked) -> status 'est', profit = sell - cheapest for one unit")
 def s_flips_est(ctx):
     c = ctx.client()
     WC = c.WC
     flip_market(c)
-    c.g("GetrichDB").autoScan = False
-    c.open_ah()
-    c.advance(1)
-    WC.Scanner.Start(WC.Scanner, "flips")
-    c.advance(120, until=lambda: c.ah_stats()["searches"] >= 1 or not WC.Scanner.active)
-    WC.Scanner.Stop(WC.Scanner, "test")
-    c.advance(2)
-    # est profits = sell - min: Forest Chain 656, Silk 50, Mageweave 50 (tie -> itemID), Medium Leather 1, Linen 1
+    auctionator_scan_ah(c, fire=False)
+    # est profits = sell - min: Mighty Chain Pants 656, Silk 50, Mageweave 50 (tie -> itemID), Medium Leather 1, Linen 1
     got = [(i, s, q, p) for (i, s, q, p, _, _, _) in flip_dump(c)]
-    ctx.eq(got, [(1273, "est", None, 656.0), (4306, "est", None, 50.0), (4338, "est", None, 50.0),
-                 (2319, "est", None, 1.0), (2589, "est", None, 1.0)], "Profit:Flips() with browse data only")
+    ctx.eq(got, [(4800, "est", None, 656.0), (4306, "est", None, 50.0), (4338, "est", None, 50.0),
+                 (2319, "est", None, 1.0), (2589, "est", None, 1.0)], "Profit:Flips() with Auctionator's prices only")
     c.slash("/wc flips")
     t = " ".join(c.texts(clip=True)).lower()
     ctx.check(("estimate" in t) if ctx.locale == "enUS" else ("估" in t), "estimate rows are not marked as an estimate on the flips tab")
@@ -738,11 +844,10 @@ def craft_setup(ctx, c):
     for iid, rows in CRAFT_LISTINGS.items():
         c.set_listings(iid, rows)
     c.set_bags({(0, 1): (2840, 3)})   # 3 Copper Bars already owned
-    c.g("GetrichDB").autoScan = False
     c.open_ah()
     c.advance(1)
-    ok, secs = start_scan(c, "craft", 900)
-    ctx.require(ok, "Scanner:Start('craft') refused")
+    ok, secs = full_search(c, "craft", 900)
+    ctx.require(ok, "the exact search of the crafting items did not start")
     c.advance(2)
 
 
@@ -856,9 +961,12 @@ def de_setup(c, scan=True):
     for iid, rows in DE_PRICES.items():
         c.set_listings(iid, rows)
     if scan:
-        c.g("GetrichDB").autoScan = False
+        # Auctionator has scanned the whole Auction House (the gear on it comes from there); the tab's check then
+        # searches the disenchanting materials exactly
         c.open_ah()
         c.advance(1)
+        auctionator_scan_ah(c)
+        c.advance(6)
         start_scan(c, "de", 600)
         c.advance(1)
 
@@ -871,7 +979,7 @@ def band_tuple(b):
 def s_de_value(ctx):
     c = ctx.client()
     WC = c.WC
-    c.set_listings(241089, [(200, 1)])      # Scarlet Dagger on the AH (gear browse of the de scan)
+    c.set_listings(241089, [(200, 1)])      # Scarlet Dagger on the AH (Auctionator's full scan sees it)
     de_setup(c)
     DE = WC.DE
     for iid in (1273, 241089, 250482, 11287, 142503, 2589, 2853):
@@ -910,7 +1018,7 @@ def s_de_value(ctx):
     ctx.eq(fnum(DE.Value(DE, 241089).value), 353.4, "Value(Scarlet Dagger 241089)")
     # Glowing Copper Boots (rare 5-15, nearest Classic band): SGS 1 x 600 x 0.95 = 570
     ctx.eq(fnum(DE.Value(DE, 250482).value), 570.0, "Value(Glowing Copper Boots 250482, rare)")
-    # AH gear from the de scan's browse: Scarlet Dagger for 200 -> gain 353.4 - 200 = 153.4
+    # AH gear from Auctionator's full scan: Scarlet Dagger for 200 -> gain 353.4 - 200 = 153.4
     lst = lua_list(first(WC.Profit.Disenchant(WC.Profit)))
     ah = [e for e in lst if e.source == "ah" and int(e.itemID) == 241089]
     ctx.check(ah, "Profit:Disenchant() has no AH entry for Scarlet Dagger 241089 (new Forever ID refused?)")
@@ -920,7 +1028,8 @@ def s_de_value(ctx):
     # partial: Lesser Astral Essence price unknown -> value from the priced outputs only: (150 + 60) x 0.95 = 199.5
     db = c.g("GetrichDB")
     db.results[10998] = None
-    db.browse["items"][10998] = None
+    c.eval("Auctionator.prices[10998] = nil")
+    c.eval("local WC = ...; WC.External:Invalidate()", WC)
     WC.Fire(WC, "PRICES_UPDATED", "test")
     v = DE.Value(DE, 1273)
     ctx.eq([int(x) for x in lua_list(v.missing)], [10998], "Value(1273).missing without LAE price")
@@ -1036,7 +1145,6 @@ def s_hist(ctx):
     ctx.eq([(int(x.t), int(x.min)) for x in hist], [(H * 3600, 90), ((H + 1) * 3600, 95)], "Store:History(2589)")
     # a watched-items scan records the hour's cheapest price; a second scan in the same hour overwrites it
     c.set_listings(2589, [(12, 100)])
-    c.g("GetrichDB").autoScan = False
     c.open_ah(); c.advance(1)
     start_scan(c, "history", 60)
     H2 = c.server_time() // 3600
@@ -1244,7 +1352,6 @@ def s_tint(ctx):
     c.set_listings(4306, [(100, 5), (160, 200)])     # Silk Cloth, sell 150
     c.set_listings(1273, [(1000, 1), (2000, 1)])     # Forest Chain, sell 1656
     c.set_listings(2592, [(40, 20)])                 # Wool Cloth, sell 33
-    c.g("GetrichDB").autoScan = False
     c.open_ah()
     c.advance(1)
 
@@ -1287,38 +1394,61 @@ def s_tint(ctx):
 
 
 # ------------------------------------------------------------------------------------------------------------------
-@scenario("idle_progress_sound", "progress bar shows phase + elapsed time, completion chat + sound; nothing runs when idle")
+
+@scenario("idle_progress_sound", "opening the AH searches nothing; a check shows round + elapsed time, chat + sound when done; nothing else runs when idle")
 def s_idle(ctx):
-    c = ctx.client()
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
     WC = c.WC
     setup_market_130(c)
-    c.open_ah()
-    c.advance(1.5)
-    ctx.check(WC.Scanner.active, "auto-scan did not start 1 s after the AH opened")
-    c.advance(10)
-    t = c.texts()
-    ctx.check(any(re.search(r"\b1[01]s\b", x) or re.search(r"\b0:1[01]\b", x) or re.search(r"1[01] ?秒", x) for x in t),
-              "elapsed time (~11s) not visible while scanning: %s" % [x for x in t if re.search(r"\d", x)][:8])
+    auctionator_scan_ah(c, fire=False)                 # Auctionator's prices from an earlier session
     chat0 = len(c.chat)
-    c.advance(400, until=lambda: not WC.Scanner.active)
-    ctx.check(len(c.chat) > chat0, "no chat line when the scan finished")
-    snd = c.sounds
-    ctx.check(len(snd) >= 1, "no sound when the scan finished (db.soundOnDone)")
-    c.advance(2)
+    c.open_ah()
+    c.advance(30)
+    st = c.ah_stats()
+    ctx.check(not WC.Scanner.active and st["searches"] == 0 and st["browses"] == 0,
+              "opening the Auction House must not send a query (since 2026.11.2 nothing is scanned): %s" % st)
+    ctx.eq(len(c.chat), chat0, "nothing to say in the chat when the prices are there: %s" % c.chat[chat0:])
+    # with the AH open the only thing that runs is the look at Auctionator's prices every 5 seconds
     idle = c.idle_report()
-    ctx.check(not idle["timers"], "timers still pending after the scan: %s" % idle["timers"])
+    only_look = lambda timers: (len(timers) == 1 and timers[0][0] == "C_Timer.NewTicker" and timers[0][1] <= 5.0
+                                and WC.External.ticker is not None)
+    ctx.check(only_look(idle["timers"]), "with the AH open only External's 5 s look should be pending: %s" % idle["timers"])
     ctx.check(not idle["onupdate"], "OnUpdate scripts running while idle (window open): %s" % idle["onupdate"])
     ctx.check(not idle["animations"], "animations playing while idle: %s" % idle["animations"])
-    # writs: two phases visible in the bar
-    c.slash("/wc writs")
-    WC.Scanner.Start(WC.Scanner, "writs")
-    c.advance(5)
     t = " ".join(c.texts())
-    ctx.check(re.search(r"1\s*/\s*2", t), "phase '1/2' not shown during the writs scan")
+    ctx.check("Auctionator" in t, "the idle bar does not say where the prices are from: %s" % [x for x in c.texts() if "ago" in x or "前" in x][:5])
+    # the check button of the crates tab
+    ok = WC.Scanner.Start(WC.Scanner, "crates")
+    ctx.require(ok, "the crates check did not start")
+    c.advance(6)
+    ctx.check(WC.Scanner.active, "the check should still be running after 6 s")
+    t = c.texts()
+    ctx.check(any(re.search(r"\b[67]s\b", x) or re.search(r"\b0:0[67]\b", x) or re.search(r"[67] ?秒", x) for x in t),
+              "elapsed time (~6s) not visible while checking: %s" % [x for x in t if re.search(r"\d", x)][:8])
+    ctx.check(any(str(WC.L.SCAN_PH_QUICK) % 5 in x for x in t), "the bar does not say what is being checked ('the best 5'): %s" % [x for x in t if re.search(r"\d", x)][:8])
+    chat0 = len(c.chat)
+    c.advance(400, until=lambda: not WC.Scanner.active)
+    ctx.check(not WC.Scanner.active, "the crates check did not finish")
+    ctx.check(len(c.chat) > chat0, "no chat line when the check finished")
+    ctx.check(len(c.sounds) >= 1, "no sound when the check finished (db.soundOnDone)")
+    c.advance(2)
+    idle = c.idle_report()
+    ctx.check(only_look(idle["timers"]), "timers pending after the check: %s" % idle["timers"])
+    ctx.check(not idle["onupdate"], "OnUpdate scripts running after the check: %s" % idle["onupdate"])
+    ctx.check(not idle["animations"], "animations playing after the check: %s" % idle["animations"])
+    # writs
+    c.slash("/wc writs")
+    ok = WC.Scanner.Start(WC.Scanner, "writs")
+    ctx.require(ok, "the writs check did not start")
+    c.advance(3)
+    ctx.check(any(str(WC.L.SCAN_PH_QUICK) % 5 in x for x in c.texts()), "the bar does not say what is being checked during the writs check")
     c.advance(900, until=lambda: not WC.Scanner.active)
     c.g("GetrichDB").soundOnDone = False
     n = len(c.sounds)
-    start_scan(c, "crates", 400)
+    ok, _ = start_scan(c, "crates", 400)
+    ctx.check(ok, "the second crates check did not start")
     ctx.eq(len(c.sounds), n, "sound played although soundOnDone = false")
     c.close_ah()
     c.advance(3)
@@ -1333,41 +1463,85 @@ def s_idle(ctx):
     check_clean(ctx, c)
 
 
-@scenario("ah_closed_mid_scan", "closing the AH stops the scan, keeps what was scanned, hides the window, leaves no timers")
+
+@scenario("ah_closed_mid_scan", "closing the AH stops the check, keeps what was searched, hides the window, leaves no timers")
 def s_close(ctx):
-    c = ctx.client()
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
     WC = c.WC
     setup_market_130(c)
+    auctionator_scan_ah(c, fire=False)
     c.open_ah()
-    c.advance(12)
-    ctx.check(WC.Scanner.active, "scan not running 12 s after AH open")
+    c.advance(1)
+    ok = WC.Scanner.Start(WC.Scanner, "crates")
+    ctx.require(ok, "the crates check did not start")
+    c.advance(6)
+    ctx.check(WC.Scanner.active, "check not running 6 s after it started")
     c.close_ah()
     c.advance(5)
     ctx.check(not WC.Scanner.active, "scanner still active after AH close")
     frame = c.g("GetrichFrame")
     ctx.check(not frame.IsVisible(frame), "window still visible after AH close")
     n = sum(1 for k in lua_keys(c.g("GetrichDB").results))
-    ctx.check(n >= 5, "results from before the close were dropped (%d left)" % n)
+    ctx.check(n >= 3, "results from before the close were dropped (%d left)" % n)
     ctx.check(not c.running_timers(), "timers left after AH close: %s" % c.running_timers())
+    # the prices stay usable with the AH closed (they are Auctionator's)
+    ctx.eq(ext_state(c), (True, None), "Auctionator's prices with the AH closed")
     check_clean(ctx, c)
 
 
-@scenario("memory_and_widgets", "memory sanity after scans and repeated refreshes; refreshing tabs creates no new widgets")
+
+@scenario("memory_and_widgets", "memory sanity with a price for every item of the built-in table; refreshing tabs creates no new widgets")
 def s_mem(ctx):
-    c = ctx.client()
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
     WC = c.WC
-    # a big auction house: 1500 extra items for the full browse
-    for i in range(1500):
-        iid = 900000 + i
-        c.add_item(iid, "Bulk Item %d" % i, quality=1 + (i % 3), ilvl=5 + i % 40, classID=(7 if i % 4 else 4), equipLoc=("" if i % 4 else "INVTYPE_CHEST"),
-                   sell=10 + i % 300, stack=(20 if i % 4 else 1))
-        c.set_listings(iid, [(50 + (i * 37) % 900, 1 + i % 30)])
-    c.M.AH.browsePageSize = 500
     m0 = c.memory_kb()
-    c.g("GetrichDB").autoScan = False
+    n_items = int(c.eval("local WC = ...; return #(WC.ItemTable())", WC))
+    m_table = c.memory_kb()
+    # a big Auction House: Auctionator has a price for every item of the built-in table, one in five of them below
+    # what a vendor pays; the items the mock client knows are listed at that price. (The stand-in's own tables are
+    # not Getrich's memory: the heap is measured again after they exist.)
+    auctionator_update(c, {}, background=500000, fire=False)      # the crate and writ items: a full scan
+    n_cheap = int(c.eval("""local WC = ...
+      local ids, sell = WC.ItemTable()
+      local A = Auctionator
+      local cheap = 0
+      for i = 1, #ids do
+        local id = ids[i]
+        local s = sell[id] or 0
+        if s > 1 and i % 5 == 0 then A.prices[id] = { math.max(1, math.floor(s * 0.8)), 0 }; cheap = cheap + 1
+        else A.prices[id] = { s * 3 + 100, 0 } end
+      end
+      return cheap""", WC))
+    ctx.check(n_items > 7000 and n_cheap > 1000, "item table: %d items, %d cheap" % (n_items, n_cheap))
+    known = int(c.eval("""local WC, M = ...
+      local ids = WC.ItemTable()
+      local n = 0
+      for i = 1, #ids do
+        local id = ids[i]
+        if C_Item.GetItemInfoInstant(id) then
+          M.AH.auctionSeq = M.AH.auctionSeq + 1
+          M.AH.listings[id] = { rows = { { unit = Auctionator.prices[id][1], qty = 1 + i % 7, auctionID = M.AH.auctionSeq } } }
+          n = n + 1
+        end
+      end
+      return n""", WC, c.M))
     c.open_ah(); c.advance(1)
+    m_mock = c.memory_kb()
+    ctx.eq(ext_state(c), (True, None), "Auctionator's full scan is in use")
+    flips, gear = [int(x) for x in multi(c.eval("""local WC = ...
+      local f, g = WC.External:Lists()
+      local nf, ng = 0, 0
+      for _ in pairs(f) do nf = nf + 1 end
+      for _ in pairs(g) do ng = ng + 1 end
+      return nf, ng""", WC), 2)]
+    ctx.check(flips >= n_cheap and gear > 500, "lists from the item table: %d flips (>= %d), %d gear" % (flips, n_cheap, gear))
     ok, secs = start_scan(c, "flips", 900)
-    ctx.require(ok and not WC.Scanner.active, "flips scan did not finish")
+    ctx.require(ok and not WC.Scanner.active, "the flips check did not finish")
+    ctx.eq(c.ah_stats()["browses"], 0, "no browse query")
     m1 = c.memory_kb()
     for tab in TABS:
         c.slash("/wc " + tab)
@@ -1387,19 +1561,31 @@ def s_mem(ctx):
             c.advance(0.3)
     w2 = c.addon_widget_count()
     m3 = c.memory_kb()
-    ctx.log("memory KB: start %.0f, after browse+search %.0f, tabs %.0f, 5 refresh rounds %.0f; widgets %d -> %d" % (m0, m1, m2, m3, w1, w2))
-    ctx.note("Lua heap: %.0f KB after a 1500-item browse + flip searches (+%.0f KB), first refresh round +%.0f KB, +%.0f KB after 5 more; %d addon widgets"
-             % (m1, m1 - m0, m2 - mw, m3 - m2, w2))
+    # the price state is rebuilt (prices read again, the lists walked again) whenever Auctionator's prices change
+    for _ in range(5):
+        c.eval("local WC = ...; WC.External:Invalidate(); WC.External:Lists(); WC:Fire('PRICES_UPDATED', 'external')", WC)
+        c.advance(0.3)
+    m4 = c.memory_kb()
+    ctx.log("memory KB: start %.0f, item table %.0f, with the stand-in's data %.0f, after lists + flip searches %.0f, all tabs opened %.0f, "
+            "first refresh round %.0f, 5 more %.0f, 5 rebuilds %.0f; widgets %d -> %d; %d of %d items known to the mock"
+            % (m0, m_table, m_mock, m1, mw, m2, m3, m4, w1, w2, known, n_items))
+    ctx.note("Lua heap: item table of %d items +%.0f KB; a price for every one of them (%d flips, %d gear) +%.0f KB for the lists and %d searches; "
+             "all tabs opened +%.0f KB; refresh rounds +%.0f KB, then +%.0f KB after 5 more and +%.0f KB after 5 rebuilds; %d addon widgets"
+             % (n_items, m_table - m0, flips, gear, m1 - m_mock, c.ah_stats()["searches"], mw - m1, m2 - mw, m3 - m2, m4 - m3, w2))
+    ctx.check(m_table - m0 < 1500, "decoding the item table grew the Lua heap by %.0f KB (> 1.5 MB)" % (m_table - m0))
+    ctx.check(m1 - m_mock < 3000, "lists + flip searches grew the Lua heap by %.0f KB (> 3 MB)" % (m1 - m_mock))
     ctx.check(m2 - mw < 1500, "the first refresh round grew the Lua heap by %.0f KB" % (m2 - mw))
-    ctx.check(m1 - m0 < 4000, "1500-item browse grew the Lua heap by %.0f KB (> 4 MB)" % (m1 - m0))
     ctx.check(m3 - m2 < 300, "5 refresh rounds grew the Lua heap by %.0f KB (leak?)" % (m3 - m2))
+    ctx.check(m4 - m3 < 300, "5 rebuilds of the price state grew the Lua heap by %.0f KB (leak?)" % (m4 - m3))
     ctx.check(w2 - w1 <= 10, "refreshing tabs created %d new widgets" % (w2 - w1))
     check_clean(ctx, c)
 
 
-@scenario("slash_commands", "/wc, /wc <tab>, /wc scan [tab], /wc stop")
+@scenario("slash_commands", "/wc, /wc <tab>, /wc scan [tab] = /gr check [tab], /wc stop, /gr auc")
 def s_slash(ctx):
-    c = ctx.client()
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
     WC = c.WC
     frame_shown = lambda: (c.g("GetrichFrame") is not None and c.g("GetrichFrame").IsVisible(c.g("GetrichFrame")))
     c.slash("/wc")
@@ -1409,17 +1595,29 @@ def s_slash(ctx):
     n = len(c.chat)
     c.slash("/wc scan")
     ctx.check(not WC.Scanner.active and len(c.chat) > n, "/wc scan with the AH closed should print a hint")
-    c.g("GetrichDB").autoScan = False
     setup_market_130(c)
     c.open_ah(); c.advance(1)
+    # no prices from Auctionator yet: nothing to check, and the chat says what is missing
+    n = len(c.chat)
     c.slash("/wc scan writs")
-    ctx.check(WC.Scanner.active and WC.Scanner.kind == "writs", "/wc scan writs did not start a writs scan")
+    ctx.check(not WC.Scanner.active, "/wc scan writs started without any prices")
+    ctx.check(any("Auctionator" in str(x) for x in c.chat[n:]), "/wc scan without prices should say that Auctionator has no scan: %s" % c.chat[n:])
+    auctionator_scan_ah(c)
+    c.slash("/wc scan writs")
+    ctx.check(WC.Scanner.active and WC.Scanner.kind == "writs", "/wc scan writs did not start a writs check")
     ctx.eq(c.g("GetrichDB").tab, "writs", "/wc scan writs selects the writs tab")
-    c.advance(5)
+    c.advance(2)
     c.slash("/wc stop")
-    ctx.check(not WC.Scanner.active, "/wc stop did not stop the scan")
+    ctx.check(not WC.Scanner.active, "/wc stop did not stop the check")
     c.slash("/gr crates")
     ctx.eq(c.g("GetrichDB").tab, "crates", "/gr crates")
+    c.slash("/gr check writs")
+    ctx.check(WC.Scanner.active and WC.Scanner.kind == "writs" and c.g("GetrichDB").tab == "writs", "/gr check writs (the name of /gr scan since 2026.11.2)")
+    c.slash("/gr stop")
+    ctx.check(not WC.Scanner.active, "/gr stop")
+    n = len(c.chat)
+    c.slash("/gr auc")
+    ctx.check(any("Auctionator" in str(x) for x in c.chat[n:]), "/gr auc should describe the price source: %s" % c.chat[n:])
     check_clean(ctx, c)
 
 
@@ -1466,16 +1664,17 @@ def s_sv(ctx):
     ctx.eq(db.resultsFormat, 3, "resultsFormat upgraded 2 -> 3")
     r = db.results[2319]
     ctx.eq(r and (r.status, int(r.min), int(r.avail)), ("listed", 194, 8883), "results[2319] kept from the 1.3.0 SV")
-    ctx.eq((db.autoScan, db.onlyMine, db.tab), (False, True, "crates"), "1.3.0 settings kept")
+    ctx.eq((db.onlyMine, db.tab), (True, "crates"), "1.3.0 settings kept")
+    ctx.eq(db.autoScan, None, "autoScan (no setting since 2026.11.2: nothing is scanned) is dropped from the saved data")
     ctx.eq(db.soundOnDone, True, "new default soundOnDone added")
     cost = c.WC.CostFor(c.WC, 2319, 20)
     ctx.eq(cost[0], 194 * 20, "CostFor(2319, 20) from saved results (80 listed at 194c)")
     c.open_ah()
     c.advance(5)
-    ctx.check(not c.WC.Scanner.active, "autoScan = false in the SV, but a scan started")
+    ctx.check(not c.WC.Scanner.active and c.ah_stats()["searches"] == 0, "opening the Auction House must not search anything")
     # round trip
     setup_market_130(c)
-    start_scan(c, "crates", 400)
+    search_exact(c, [2589, 2318])
     c.WC.Store.SetWatch(c.WC.Store, 2589, True)
     text = c.logout_sv()
     ctx.check("GetrichDB" in text, "logout produced no SavedVariables")
@@ -1513,10 +1712,9 @@ def s_char2(ctx):
     fx = json.load(open(os.path.join(FIX, "recipes.json")))["chars"][SECOND_CHAR]["recipes"]
     exp = {int(k) for k, r in fx.items() if r["learned"] and r["skillLine"] in (197, 333, 185, 129)}
     ctx.eq({int(k) for k in lua_keys(recs)} if recs else set(), exp, "captured recipes of the second character")
-    c.g("GetrichDB").autoScan = False
     c.open_ah(); c.advance(1)
-    ok, secs = start_scan(c, "craft", 900)
-    ctx.check(ok and not WC.Scanner.active, "craft scan did not finish")
+    ok, secs = full_search(c, "craft", 900)
+    ctx.check(ok and not WC.Scanner.active, "the exact search of the crafting items did not finish")
     lst, counts = WC.Profit.Craft(WC.Profit)
     ctx.check(len(lua_list(lst)) > 20, "Profit:Craft() returned only %d entries" % len(lua_list(lst)))
     c.slash("/wc craft")
@@ -1541,8 +1739,8 @@ def s_codex_wipe(ctx):
     for k in ("schemaVersion", "markets", "characters", "vendor", "disenchant", "settings"):
         ctx.eq(db[k], None, "old key GetrichDB.%s after load" % k)
     ctx.eq(db.resultsFormat, 3, "resultsFormat")
-    ctx.eq((db.autoScan, db.tab, db.soundOnDone), (True, "crates", True), "defaults applied after the wipe")
-    for k, v in (("historyDays", 30), ("pruneDays", 14), ("deMeasuredCasts", 20), ("flipCandidates", 80)):
+    ctx.eq((db.tab, db.soundOnDone), ("crates", True), "defaults applied after the wipe")
+    for k, v in (("historyDays", 30), ("pruneDays", 14), ("deMeasuredCasts", 20), ("flipCandidates", 80), ("quickTop", 5)):
         ctx.eq(db[k], v, "default %s" % k)
     ctx.eq(lua_keys(db.recipes), [], "no recipes migrated from the old SV")
     ctx.eq(lua_keys(db.vendorObs), [], "no merchant records migrated from the old SV")
@@ -1583,49 +1781,67 @@ def s_history_days(ctx):
     check_clean(ctx, c)
 
 
-@scenario("prune_days_setting", "pruneDays: search results / browse rows older than N days are dropped on load and when the setting changes")
+
+@scenario("prune_days_setting", "pruneDays: search results older than N days are dropped on load and when the setting changes; obsolete tables of older versions go")
 def s_prune_days(ctx):
     t0 = SERVER_TIME0
     d = 86400
-    sv = """GetrichDB = { resultsFormat = 3, pruneDays = 14,
+    sv = """GetrichDB = { resultsFormat = 3, pruneDays = 14, autoScan = false, useAuctionator = true, quickScan = true,
       results = { [2589] = { status = "listed", min = 10, avail = 5, time = %d, entries = { { 10, 5 } } },
                   [2318] = { status = "listed", min = 30, avail = 5, time = %d, entries = { { 30, 5 } } } },
-      browse = { items = { [2770] = { min = 5, qty = 20, t = %d }, [2771] = { min = 9, qty = 20, t = %d } } } }""" % (
-        t0 - 20 * d, t0 - 5 * d, t0 - 20 * d, t0 - 2 * d)
+      browse = { full = %d, items = { [2770] = { min = 5, qty = 20, t = %d }, [2771] = { min = 9, qty = 20, t = %d } } },
+      markets = { ["Classic Beta PvP 2|Neutral"] = { results = { [2589] = { status = "listed", min = 11, avail = 5, time = %d, entries = { { 11, 5 } } } },
+                                                     browse = { items = { [2770] = { min = 6, qty = 20, t = %d } } } } } }""" % (
+        t0 - 20 * d, t0 - 5 * d, t0 - 2 * d, t0 - 20 * d, t0 - 2 * d, t0 - 2 * d, t0 - 2 * d)
     c = ctx.client(sv=sv)
     db = c.g("GetrichDB")
-    # 14 days: the 20-day-old search result (Linen) and browse row (Copper Ore) are dropped
+    # 14 days: the 20-day-old search result (Linen) is dropped
     ctx.eq(sorted(int(k) for k in lua_keys(db.results)), [2318], "results kept with pruneDays = 14")
-    ctx.eq(sorted(int(k) for k in lua_keys(db.browse["items"])), [2771], "browse rows kept with pruneDays = 14")
     ctx.eq(first(c.WC.UnitPrice(c.WC, 2589)), None, "UnitPrice of a pruned item")
+    # what Getrich's own scans kept until 2026.11.1 (the browse snapshot) and their switches are gone, in every house
+    ctx.eq((db.browse, db.autoScan, db.useAuctionator, db.quickScan), (None, None, None, None), "obsolete keys of 2026.11.1 and older")
+    park = db.markets["Classic Beta PvP 2|Neutral"]
+    ctx.check(park.browse is None and park.results[2589] is not None, "a parked house: browse snapshot gone, search results kept")
+    ctx.eq(first(c.WC.UnitPrice(c.WC, 2771)), None, "no price from the old browse snapshot")
     fire_setting(c, "pruneDays", 3)
-    # 3 days: Light Leather (5 days) goes, Tin Ore's browse row (2 days) stays
+    # 3 days: Light Leather (5 days) goes
     ctx.eq(sorted(int(k) for k in lua_keys(db.results)), [], "results kept after pruneDays -> 3")
-    ctx.eq(sorted(int(k) for k in lua_keys(db.browse["items"])), [2771], "browse rows kept after pruneDays -> 3")
-    ctx.eq(first(c.WC.UnitPrice(c.WC, 2771)), 9, "UnitPrice(Tin Ore) from the kept browse row")
+    text = c.logout_sv()
+    for word in ("browse", "autoScan", "useAuctionator", "quickScan"):
+        ctx.check(word not in text, "the saved data still contains '%s'" % word)
     check_clean(ctx, c)
 
 
-@scenario("flip_candidates_setting", "flipCandidates (40 / 80 / 150) limits how many cheap items the flips scan searches, best first")
+
+@scenario("flip_candidates_setting", "flipCandidates (40 / 80 / 150) limits how many cheap items the flips check searches, best first")
 def s_flip_n(ctx):
     for n, expect in ((40, 40), (150, 60)):
         c = ctx.client()
         WC = c.WC
         c.clear_listings()
-        # 60 items the vendor buys for 1000c each, listed at 1000 - 10 x (i + 1): score (sell - min) x min(qty, 20) = 10 x (i + 1)
-        for i in range(60):
-            iid = 950000 + i
-            c.add_item(iid, "Flip Item %d" % i, quality=1, ilvl=10, classID=7, sell=1000, stack=20, cached=True)
-            c.set_listings(iid, [(1000 - 10 * (i + 1), 1)])
-        c.M.AH.browsePageSize = 25
+        # 60 items of the built-in table that a vendor buys for at least 1000c, each listed 10 x (i + 1) below that:
+        # the gain per item (sell - cheapest) is 10 x (i + 1)
+        t = c.eval("""local WC = ...
+          local ids, sell = WC.ItemTable()
+          local out = {}
+          for i = 1, #ids do
+            local id = ids[i]
+            if #out < 60 and sell[id] >= 1000 and C_Item.GetItemInfoInstant(id) and WC.SellPrice(id) == sell[id] then out[#out + 1] = id end
+          end
+          return out""", WC)
+        items = [int(x) for x in lua_list(t)]
+        ctx.require(len(items) == 60, "60 table items known to the mock client (%d)" % len(items))
+        sell = {i: int(c.eval("local WC, id = ...; return (select(2, WC.ItemTable()))[id]", WC, i)) for i in items}
+        for k, iid in enumerate(items):
+            c.set_listings(iid, [(sell[iid] - 10 * (k + 1), 1)])
         c.g("GetrichDB").flipCandidates = n
-        c.g("GetrichDB").autoScan = False
         c.open_ah(); c.advance(1)
+        auctionator_scan_ah(c)
         ok, _ = start_scan(c, "flips", 900)
-        ctx.require(ok and not WC.Scanner.active, "flips scan did not finish (flipCandidates %d)" % n)
+        ctx.require(ok and not WC.Scanner.active, "the flips check did not finish (flipCandidates %d)" % n)
         searched = set(c.ah_stats()["searchByItem"])
-        # the biggest scores are the highest i: flipCandidates 40 -> i = 20..59; 150 -> all 60
-        ctx.eq(searched, {950000 + i for i in range(60 - expect, 60)}, "items searched with flipCandidates = %d" % n)
+        # the biggest gains are the highest k: flipCandidates 40 -> k = 20..59; 150 -> all 60
+        ctx.eq(searched, set(items[60 - expect:]), "items searched with flipCandidates = %d" % n)
         check_clean(ctx, c, "flipCandidates %d" % n)
 
 
@@ -1658,8 +1874,8 @@ def s_de_measured_n(ctx):
 
 
 SETTING_DEFAULTS = {   # SPEC2 5: every adjustable parameter and its default
-    "autoScan": True, "soundOnDone": True, "chatOnDone": True, "ahTint": True, "profOverlay": True, "profLevelMark": True,
-    "uiScale": 1.0, "dockToAH": True,
+    "soundOnDone": True, "chatOnDone": True, "ahTint": True, "profOverlay": True, "profLevelMark": True,
+    "uiScale": 1.0, "dockToAH": True, "quickTop": 5,
     "onlyMine": False, "hideNoCrate": True, "hideNoMats": True, "perfRank": 0,
     "hideNoWrit": True, "hideNoItem": True, "hideDone": True, "diplomatRank": 0,
     "flipMinProfit": 0, "flipShowGone": False, "flipCandidates": 80,
@@ -1671,6 +1887,7 @@ SETTING_CHOICES = {    # option lists the page must offer (SPEC2 5)
     "flipMinProfit": {0, 1000, 10000, 50000}, "flipCandidates": {40, 80, 150}, "deMeasuredCasts": {10, 20, 30, 50},
     "historyDays": {7, 14, 30, 60, 90}, "pruneDays": {3, 7, 14, 30}, "levelOffset": {"best3", "npcde", "none"},
     "levelTarget": {"max", 225, 300}, "perfRank": {0, 1, 2, 3}, "diplomatRank": {0, 1, 2, 3, 4, 5},
+    "quickTop": {3, 5, 10, 20},
 }
 
 
@@ -1697,7 +1914,8 @@ def fill_data(c):
       db.watch[2589] = true
       db.history[2589] = { h = { [H] = { min = 10, qty = 5 } }, d = {} }
       db.results[2589] = { status = "listed", min = 10, avail = 5, time = t, entries = { { 10, 5 } } }
-      db.browse.items[2770] = { min = 5, qty = 20, t = t }
+      db.scannedAt.crates = t
+      db.extScans[db.market] = { t = t, ids = { 2589 } }
       db.deSamples["2:4:21-25"] = { casts = 3, qty = { [10940] = 12 }, hit = { [10940] = 3 }, min = {}, max = {} }
       db.vendorObs[3372] = { price = 40, bundle = 5, npc = 4615, name = "Katrina Alliestar", zone = "Undercity", limited = false, t = t }""",
            db, H, c.server_time())
@@ -1706,8 +1924,8 @@ def fill_data(c):
 def data_state(c):
     db = c.g("GetrichDB")
     return {"history": len(lua_keys(db.history)), "results": len(lua_keys(db.results)),
-            "browse": len(lua_keys(db.browse["items"])), "deSamples": len(lua_keys(db.deSamples)),
-            "vendorObs": len(lua_keys(db.vendorObs))}
+            "scannedAt": len(lua_keys(db.scannedAt)), "extScans": len(lua_keys(db.extScans)),
+            "deSamples": len(lua_keys(db.deSamples)), "vendorObs": len(lua_keys(db.vendorObs))}
 
 
 @scenario("settings_page", "SPEC2 5: Settings -> AddOns -> Getrich page: every control writes its key + fires SETTINGS_CHANGED, data buttons, about")
@@ -1802,7 +2020,8 @@ def s_settings(ctx):
         # data retention is not an option to reset: historyDays / pruneDays survive every button
         ctx.eq((db.historyDays, db.pruneDays), (60, 30), "historyDays / pruneDays after '%s'" % _strip(w.GetText(w)))
     ctx.check(((("history",), False) in cleared), "no button clears only the price history: %s" % cleared)
-    ctx.check(((("browse", "results"), False) in cleared), "no button clears scan results + browse snapshot: %s" % cleared)
+    ctx.check(((("results", "scannedAt"), False) in cleared),
+              "no button clears exactly Getrich's own search results (the Auctionator scans it watched stay): %s" % cleared)
     ctx.check(((("deSamples",), False) in cleared), "no button clears the disenchant records: %s" % cleared)
     ctx.check(((("vendorObs",), False) in cleared), "no button clears the merchant records: %s" % cleared)
     ctx.check((((), True) in cleared), "no 'reset settings' button that keeps the data: %s" % cleared)
@@ -1892,11 +2111,10 @@ def tailoring_setup(ctx, rank=20, scan=True, keep_open=False, rows=None):
     if scan:
         for iid, rows in TAILOR_LISTINGS.items():
             c.set_listings(iid, rows)
-        c.g("GetrichDB").autoScan = False
         c.open_ah()
         c.advance(1)
-        ok, _ = start_scan(c, "craft", 900)
-        ctx.require(ok, "Scanner:Start('craft') refused")
+        ok, _ = full_search(c, "craft", 900)
+        ctx.require(ok, "the exact search of the crafting items did not start")
         c.advance(1)
     return c, ck
 
@@ -2423,9 +2641,8 @@ def s_level_su0(ctx):
     listings[2996] = [(40, 7), (45, 300), (50, 1254)]   # 1561 bolts listed, the scanner keeps the cheapest 307
     for iid, r in listings.items():
         c.set_listings(iid, r)
-    c.g("GetrichDB").autoScan = False
     c.open_ah(); c.advance(1)
-    start_scan(c, "craft", 900)
+    full_search(c, "craft", 900)
     c.advance(1)
     LV = WC.Leveling
     bag = [e for e in lua_list(LV.Candidates(LV, ck, 197, 20)) if int(e.recipeID) == 3755]
@@ -2472,7 +2689,6 @@ def s_cost_deep(ctx):
     c = ctx.client()
     WC = c.WC
     c.set_listings(2996, [(40, 7), (45, 300), (50, 1254)])
-    c.g("GetrichDB").autoScan = False
     c.open_ah(); c.advance(1)
     WC.Store.SetWatch(WC.Store, 2996, True)
     start_scan(c, "history", 120)
@@ -2563,7 +2779,7 @@ def s_artisan(ctx):
     c.set_listings(248697, [(1000, 3)])
     c.set_listings(10620, [(10, 500)])
     c.open_ah()
-    start_scan(c, "crates", 900)
+    full_search(c, "crates")
     ev = {int(e.crate.id): e for e in lua_list(c.eval("local WC = ...; return WC:EvaluateCrates()", WC))}
     e = ev[248697]
     ctx.eq(str(e.status), "ok", "Artisan Ore status")
@@ -2616,47 +2832,67 @@ def s_reward_records(ctx):
     check_clean(ctx, c)
 
 
-@scenario("markets", "2026.11.0: prices are kept per Auction House (realm + faction, neutral apart); a neutral house costs sales at 15%")
+
+@scenario("markets", "search results are kept per Auction House (faction, neutral apart); Auctionator's prices are used only at the house its scan was seen at; a neutral house costs sales at 15%")
 def s_markets(ctx):
-    c = ctx.client()
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
     WC = c.WC
     db = c.g("GetrichDB")
     ctx.eq(str(db.market), "Classic Beta PvP 2|Horde", "market after login")
     ctx.eq(fnum(c.eval("local WC = ...; return WC:AHCut()", WC)), 0.05, "faction house cut")
+    cost = lambda: multi(c.eval("local WC = ...; return WC:CostForAny(2770, 20)", WC), 2)
     c.set_listings(2770, [(40, 100)])
     c.open_ah()
-    start_scan(c, "crates", 900)
-    cost = lambda: first(c.eval("local WC = ...; return (WC:CostFor(2770, 20))", WC))
-    ctx.eq(fnum(cost()), 800, "Copper Ore x 20 at the Horde house")
-    ctx.check(db.scannedAt.crates, "scannedAt.crates")
+    c.advance(1)
+    auctionator_scan_ah(c)                              # Auctionator's full scan, seen at the Horde house
+    ctx.eq(ext_state(c), (True, None), "Auctionator's scan at the Horde house is in use there")
+    ctx.eq(cost(), (800, "est"), "Copper Ore x 20 at the Horde house, from Auctionator")
+    search_exact(c, [2770])
+    ctx.eq(cost(), (800, "ok"), "Copper Ore x 20 at the Horde house, searched")
     c.close_ah()
-    # a neutral auctioneer: its own (empty) market, 15% cut, a chat line
+    # a neutral auctioneer: its own (empty) market, 15% cut, a chat line; the Horde scan's prices are not this house's
     c.M.auctioneer = c.lua.table_from({"npcID": 8661, "name": "Auctioneer Beardo", "neutral": True})
     c.set_listings(2770, [(90, 100)])
     c.open_ah()
     ctx.eq(str(db.market), "Classic Beta PvP 2|Neutral", "market at a neutral auctioneer")
     ctx.eq(fnum(c.eval("local WC = ...; return WC:AHCut()", WC)), 0.15, "neutral house cut")
-    ctx.check(cost() is None and not db.scannedAt.crates, "the neutral house starts without the Horde prices")
+    ctx.eq(ext_state(c), (False, "other"), "Auctionator's last scan was at the Horde house: not used at the neutral one")
+    ctx.eq(cost(), (None, None), "the neutral house starts without the Horde prices")
     ctx.check(any("15%" in str(m) for m in c.chat), "chat line about the neutral house: %s" % list(c.chat)[-3:])
-    start_scan(c, "crates", 900)
-    ctx.eq(fnum(cost()), 1800, "Copper Ore x 20 at the neutral house")
+    n = len(c.chat)
+    c.advance(3)
+    ctx.check(any("Classic Beta PvP 2|Horde" in str(m) for m in c.chat[n:]), "the chat should say that the prices are another house's: %s" % c.chat[n:])
+    ok = WC.Scanner.Start(WC.Scanner, "crates")
+    ctx.check(not ok, "nothing to check without this house's prices")
+    auctionator_scan_ah(c, background=600000)           # ... until Auctionator scans here (other prices, as at another house)
+    ctx.eq(ext_state(c), (True, None), "Auctionator's scan at the neutral house is in use there")
+    ctx.eq(cost(), (1800, "est"), "Copper Ore x 20 at the neutral house, from Auctionator")
+    search_exact(c, [2770])
+    ctx.eq(cost(), (1800, "ok"), "Copper Ore x 20 at the neutral house, searched")
     c.close_ah()
     ctx.eq(str(db.market), "Classic Beta PvP 2|Horde", "back to the faction market when the neutral house closes")
-    ctx.eq(fnum(cost()), 800, "the Horde prices are back")
+    # Auctionator's database now holds the neutral house's prices: the Horde house keeps its own search results only
+    ctx.eq(ext_state(c), (False, "other"), "Auctionator's last scan was at the neutral house: not used at the Horde one")
+    ctx.eq(cost(), (800, "ok"), "the Horde search results are back")
     ctx.eq(fnum(c.eval("local WC = ...; return WC:AHCut()", WC)), 0.05, "faction cut again")
-    ctx.eq(fnum(db.markets["Classic Beta PvP 2|Neutral"].results[2770].min), 90, "the neutral prices are parked")
+    ctx.eq(fnum(db.markets["Classic Beta PvP 2|Neutral"].results[2770].min), 90, "the neutral search results are parked")
     # a faction auctioneer is not neutral
     c.M.auctioneer = c.lua.table_from({"npcID": 8672, "name": "Auctioneer Thathung"})
     c.open_ah()
     ctx.eq(str(db.market), "Classic Beta PvP 2|Horde", "market at a Horde auctioneer")
     c.close_ah()
-    # clearing the scans clears every house
+    # clearing the search results clears every house; which house Auctionator's scan was seen at is kept
     WC.Settings.Clear(WC.Settings, "scans")
-    ctx.check(cost() is None and db.markets["Classic Beta PvP 2|Neutral"].results is None, "Clear scans empties all houses")
+    ctx.eq(cost(), (None, None), "Clear search results: nothing left at the Horde house")
+    ctx.check(db.markets["Classic Beta PvP 2|Neutral"].results is None, "Clear search results empties all houses")
+    ctx.eq(ext_state(c), (False, "other"), "... and the neutral scan is still not taken for the Horde house's")
     check_clean(ctx, c)
 
 
-@scenario("markets_login", "2026.11.0: logging in on a character of another faction parks the other house's prices; an old database is adopted as this character's house")
+
+@scenario("markets_login", "logging in on a character of another faction parks the other house's search results and history; an old database is adopted as this character's house")
 def s_markets_login(ctx):
     now = SERVER_TIME0
     sv = ("GetrichDB = { resultsFormat = 3, market = 'Classic Beta PvP 2|Alliance', "
@@ -2667,17 +2903,18 @@ def s_markets_login(ctx):
     WC = c.WC
     db = c.g("GetrichDB")
     ctx.eq(str(db.market), "Classic Beta PvP 2|Horde", "market after logging in on the Horde character")
-    ctx.check(db.results[2770] is None and db.history[2770] is None and db.browse["items"][2770] is None and not db.scannedAt.crates,
+    ctx.check(db.results[2770] is None and db.history[2770] is None and not db.scannedAt.crates,
               "the Alliance house's prices must not show for the Horde character")
     park = db.markets["Classic Beta PvP 2|Alliance"]
-    ctx.eq((fnum(park.results[2770].min), fnum(park.browse["items"][2770].min), fnum(park.history[2770].h[now // 3600].min)), (55, 55, 55), "parked Alliance prices")
+    ctx.eq((fnum(park.results[2770].min), fnum(park.history[2770].h[now // 3600].min)), (55, 55), "parked Alliance prices")
+    ctx.check(db.browse is None and park.browse is None, "the browse snapshot of 2026.11.1 and older is dropped, also from a parked house")
     ctx.check(c.eval("local WC = ...; return rawequal(WC.Scanner.results, GetrichDB.results)", WC), "the Scanner must write into the loaded house's table")
     c.slash("/gr crates")
     c.set_listings(2770, [(40, 100)])
     c.open_ah()
-    start_scan(c, "crates", 900)
-    ctx.eq(fnum(first(c.eval("local WC = ...; return (WC:CostFor(2770, 20))", WC))), 800, "Horde price after a scan")
-    ctx.eq(fnum(db.markets["Classic Beta PvP 2|Alliance"].results[2770].min), 55, "Alliance price untouched by the Horde scan")
+    search_exact(c, [2770])
+    ctx.eq(fnum(first(c.eval("local WC = ...; return (WC:CostFor(2770, 20))", WC))), 800, "Horde price after a search")
+    ctx.eq(fnum(db.markets["Classic Beta PvP 2|Alliance"].results[2770].min), 55, "Alliance price untouched by the Horde search")
     check_clean(ctx, c)
     # a database from before 2026.11.0 has no market: its prices become this character's house
     old = "GetrichDB = { resultsFormat = 3, results = { [2770] = { status = 'listed', entries = { { 61, 100 } }, min = 61, avail = 100, time = %d } } }" % now
@@ -2690,356 +2927,8 @@ def s_markets_login(ctx):
 
 
 # ===================================================================================================================
-# 2026.11.1: Auctionator's prices as estimates, quick scans, markets keyed by ruleset
+# 2026.11.1: markets keyed by ruleset
 # ===================================================================================================================
-def install_auctionator(c):
-    """A stand-in for Auctionator's add-on API (Auctionator.API.v1), to be installed before login.
-    Auctionator.prices[itemID] = { cheapest unit price, age in days }."""
-    c.eval("""
-      local A = { API = { v1 = {} }, callbacks = {}, prices = {} }
-      local function check(id) if type(id) ~= "string" or id == "" then error("Invalid callerID. Use the name of your add-on.") end end
-      function A.API.v1.GetAuctionPriceByItemID(callerID, itemID) check(callerID); local p = A.prices[itemID]; return p and p[1] or nil end
-      function A.API.v1.GetAuctionAgeByItemID(callerID, itemID) check(callerID); local p = A.prices[itemID]; return p and p[2] or nil end
-      function A.API.v1.RegisterForDBUpdate(callerID, fn) check(callerID); A.callbacks[#A.callbacks + 1] = fn end
-      rawset(_G, "Auctionator", A)""")
-
-
-# other crate materials (their crates are not listed: nothing ranks from them) and items writs ask for
-AUC_BACKGROUND_CRATE = [7911, 10620, 11370, 13464, 8838, 8839, 8845, 8846]
-
-
-def auctionator_update(c, prices, background=0, fire=True):
-    """Auctionator stores `prices` ({itemID: unit price}) as seen today and tells its listeners.
-    background = a price: the update also saw 8 other crate materials and the items of the first 8 writs at that
-    price, like a whole-AH scan does. background = 0: only `prices`, like a search for those items."""
-    c.eval("""local WC, prices, bg, crateBg, fire = ...
-      local A = Auctionator
-      for id, p in pairs(prices) do A.prices[id] = { p, 0 } end
-      if bg > 0 then
-        for _, id in pairs(crateBg) do A.prices[id] = { bg, 0 } end
-        for i = 1, 8 do A.prices[WC.WRITS[i].item] = { bg + i, 0 } end
-      end
-      if fire then for _, fn in ipairs(A.callbacks) do fn() end end""",
-           c.WC, c.lua.table_from(prices), background, c.lua.table_from(AUC_BACKGROUND_CRATE), fire)
-
-
-def auctionator_new_day(c):
-    """Auctionator's day counter moves on: everything it knows is one day older."""
-    c.eval("for _, p in pairs(Auctionator.prices) do p[2] = p[2] + 1 end")
-
-
-def crate_entry(c, crate_id):
-    return [e for e in lua_list(c.eval("local WC = ...; return WC:EvaluateCrates()", c.WC)) if e.crate.id == crate_id][0]
-
-
-def ext_state(c):
-    """(usable, why) of External.lua, freshly computed."""
-    return multi(c.eval("local WC = ...; local X = WC.External; X:Invalidate(); local s = X:State(); return X:Usable(), s.why", c.WC), 2)
-
-
-@scenario("auctionator_estimates", "2026.11.1: after Auctionator finishes a whole-AH scan, its cheapest prices rank crates before any Getrich scan (marked ~); a quick scan searches only the top entries, in rounds; exact prices replace the estimates")
-def s_auctionator(ctx):
-    c = ctx.client(login=False)
-    install_auctionator(c)
-    c.login()
-    WC = c.WC
-    db = c.g("GetrichDB")
-    X = WC.External
-    db.autoScan = False
-    ctx.eq(ext_state(c), (False, "noscan"), "Auctionator is there, but no scan has been watched")
-    ctx.check(crate_entry(c, 248683).status == "unscanned", "no scan watched, no Getrich scan: unscanned")
-    # what Auctionator already had before Getrich looked: not used (not known when and where it is from)
-    auctionator_update(c, {248684: 900, 2770: 45}, fire=False)
-    auctionator_new_day(c)
-    ctx.eq(ext_state(c), (False, "noscan"), "prices Auctionator already had are not used")
-    # the real Auction House: Iron Ore is thin (1 at 30, then 500), Copper too; Tin is deep
-    c.set_listings(248683, [(520, 1)])
-    c.set_listings(2770, [(40, 5), (100, 100)])
-    c.set_listings(2771, [(30, 100)])
-    c.set_listings(248687, [(600, 2)])
-    c.set_listings(2772, [(30, 1), (500, 100)])
-    c.open_ah()
-    # Auctionator scans the whole AH. Apprentice Ore (5 Favor, 2s50c): crate 500, Copper 40, Tin 30. Journeyman Ore
-    # (10 Favor, 5s): crate 600, Iron 30, Silver Ore not seen. Apprentice Textiles: the crate was last seen yesterday.
-    auctionator_update(c, {248683: 500, 2770: 40, 2771: 30, 248687: 600, 2772: 30, 2589: 10}, background=10000)
-    ctx.eq(ext_state(c), (True, None), "the scan was watched: Auctionator's prices are in use")
-    ctx.eq(str(db.market), "Classic Beta PvP 2|Horde", "(market of this client)")
-    rec = db.extScans[db.market]
-    ctx.check(rec is not None and abs(rec.t - c.eval("return time()")) <= 1, "the scan is noted for this Auction House, now")
-    ctx.eq(multi(c.eval("local WC = ...; return WC:CostForAny(2770, 20, true)", WC), 2), (800, "est"), "Copper Ore x 20 from Auctionator: cheapest price x 20, an estimate")
-    ctx.eq(str(first(c.eval("local WC = ...; local _, _, res = WC:CostBest(2770, 20); return res.source", WC))), "auctionator", "source")
-    ctx.eq(multi(c.eval("local WC = ...; return WC:CostForAny(2770, 20)", WC), 2), (None, None), "the other tabs do not use Auctionator: no data for Copper Ore")
-    ctx.eq(multi(c.eval("local WC = ...; return WC:CostBest(2775, 10)", WC), 2), (None, "none"), "Silver Ore: not seen in the scan")
-    e = crate_entry(c, 248683)
-    ctx.eq((str(e.status), fnum(e.crateCost), fnum(e.matCost), bool(e.est), fnum(e.perFavor)), ("ok", 500, 600, True, 170),
-           "Apprentice Ore from estimates: crate 500 + Tin 20 x 30 - 2s50c, per Favor 170")
-    e = crate_entry(c, 248687)
-    ctx.eq((fnum(e.matCost), bool(e.est), fnum(e.perFavor)), (600, True, 70), "Journeyman Ore from estimates: (600 + 600 - 500) / 10")
-    e = crate_entry(c, 248684)
-    ctx.eq((str(e.status), bool(e.crateEst)), ("nocrate", True), "Apprentice Textiles: the crate was not seen in the scan -> not for sale (estimate)")
-    c.slash("/gr crates")
-    t = c.texts()
-    ctx.check(any(x.startswith("~") for x in t), "estimated prices are marked with ~: %s" % t[:12])
-    ctx.eq(float(first(c.eval("local WC = ...; return (WC:BestPerFavor())", WC))), 70.0, "BestPerFavor from estimates")
-    ctx.check(multi(c.eval("local WC = ...; return WC:BestPerFavor()", WC), 2)[1] is True, "... flagged as an estimate")
-    c.chat.clear() if hasattr(c.chat, "clear") else None
-    c.slash("/gr auc")
-    ctx.check(any("Auctionator" in str(m) for m in c.chat), "/gr auc prints the status: %s" % list(c.chat)[-2:])
-    # the other tabs: nothing breaks
-    ctx.check(first(c.eval("local WC = ...; return (WC:UnitPrice(WC.WRITS[1].item))", WC)) is None, "UnitPrice (other tabs) does not use Auctionator")
-    ctx.eq(multi(c.eval("local WC = ...; return WC:CostBest(WC.WRITS[1].item, 1)", WC), 2), (10001, "ok"), "a writ item on the Writs tab: Auctionator's price")
-    for key in lua_list(c.eval("local WC = ...; return WC.UI:TabKeys()", WC)):
-        c.slash("/gr " + str(key))
-    c.slash("/gr crates")
-    # a quick scan
-    db.quickTop = 1
-    ctx.check(WC.Scanner.IsQuick(), "quick scans are on with a watched Auctionator scan")
-    start_scan(c, "crates", 900)
-    searched = sorted(int(k) for k in lua_keys(db.results))
-    ctx.eq(searched, [2770, 2771, 2772, 2775, 248683, 248687], "quick scan with quickTop = 1: round 1 Journeyman Ore, round 2 Apprentice Ore (it moved to the top), nothing else")
-    e = crate_entry(c, 248687)
-    ctx.eq((fnum(e.matCost), bool(e.est), fnum(e.perFavor)), (30 + 19 * 500, False, (600 + 9530 - 500) / 10.0), "Journeyman Ore, exact: 20 Iron Ore cost 9530")
-    e = crate_entry(c, 248683)
-    ctx.eq((fnum(e.crateCost), fnum(e.matCost), bool(e.est), fnum(e.perFavor)), (520, 600, False, (520 + 600 - 250) / 5.0), "Apprentice Ore, exact")
-    ctx.eq(fnum(e.opts[1].cost), 5 * 40 + 15 * 100, "Copper Ore x 20 by the order book: 1700, not 800")
-    t = c.texts()
-    ctx.check(not any(x.startswith("~") for x in t), "nothing shown is an estimate after the quick scan: %s" % [x for x in t if x.startswith("~")][:5])
-    # Auctionator scans again later: its newer prices replace Getrich's older exact ones, as estimates
-    c.advance(1800)
-    auctionator_update(c, {248683: 500, 2770: 40, 2771: 25, 248687: 600, 2772: 30, 2589: 10}, background=12000)
-    e = crate_entry(c, 248683)
-    ctx.eq((fnum(e.matCost), bool(e.est)), (500, True), "after a newer Auctionator scan: Tin 20 x 25, estimate again")
-    ctx.eq((fnum(e.opts[1].cost), bool(e.opts[1].est)), (1700, False), "Copper Ore: the newer scan shows the same cheapest price (40), the order book stays")
-    ctx.eq((fnum(e.crateCost), bool(e.crateEst)), (500, True), "the crate: 520 in the search, 500 in the newer scan -> the newer price, as an estimate")
-    e = crate_entry(c, 248687)
-    ctx.eq((fnum(e.matCost), bool(e.est)), (9530, False), "Journeyman Ore: crate 600 and Iron 30 confirmed by the newer scan, still exact")
-    c.close_ah()
-    ctx.eq(ext_state(c), (True, None), "still in use with the Auction House closed")
-    # quick scans off: everything is searched
-    db.quickScan = False
-    c.eval("local WC = ...; WC:Fire('SETTINGS_CHANGED', 'quickScan')", WC)
-    c.open_ah()
-    ctx.check(not WC.Scanner.IsQuick(), "quickScan off")
-    start_scan(c, "crates", 900)
-    ctx.check(len(lua_keys(db.results)) >= 120, "a full crate scan searches all crates and materials (%d results)" % len(lua_keys(db.results)))
-    c.close_ah()
-    # Auctionator's prices off: no estimates at all
-    db.useAuctionator = False
-    c.eval("local WC = ...; WC:Fire('SETTINGS_CHANGED', 'useAuctionator')", WC)
-    ctx.eq(ext_state(c), (False, "off"), "useAuctionator off")
-    ctx.eq(multi(c.eval("local WC = ...; return WC:CostBest(2589, 40)", WC), 2), (None, "none"), "Linen Cloth: from the full scan (not listed), not from Auctionator")
-    check_clean(ctx, c)
-
-
-@scenario("auctionator_limits", "2026.11.1: Auctionator's prices are used only from a whole-AH scan Getrich watched at this Auction House, for 12 hours; not from a search, another house, or an older day")
-def s_auctionator_limits(ctx):
-    c = ctx.client(login=False)
-    install_auctionator(c)
-    c.login()
-    WC = c.WC
-    db = c.g("GetrichDB")
-    db.autoScan = False
-    cost = lambda item, qty: multi(c.eval("local WC, i, q = ...; return WC:CostBest(i, q)", WC, item, qty), 4)
-    scan = {248683: 500, 2770: 40, 2771: 30, 248687: 600, 2772: 30, 2589: 10}
-    # an update with the Auction House closed is not a scan of any house
-    auctionator_update(c, scan, background=10000)
-    ctx.eq(ext_state(c), (False, "noscan"), "an update while no Auction House is open is not used")
-    c.eval("Auctionator.prices = {}")
-    n_chat = len(c.chat)
-    c.open_ah()
-    c.advance(2)
-    ctx.check(any("Auctionator" in str(m) for m in list(c.chat)[n_chat:]), "opening the Auction House says once that no Auctionator scan is in use yet: %s" % list(c.chat)[n_chat:])
-    # a search for one item, and a shopping list of crate materials: not whole-AH scans
-    auctionator_update(c, {2770: 40})
-    ctx.eq(ext_state(c), (False, "noscan"), "a search for one item is not a scan")
-    auctionator_update(c, {**scan, **{i: 77 for i in AUC_BACKGROUND_CRATE}})
-    ctx.eq(ext_state(c), (False, "noscan"), "14 crate items and no writ item: a shopping list, not a scan")
-    ctx.eq(cost(2770, 20)[1], None, "... no estimate")
-    # an item Auctionator saw yesterday, then a whole-AH scan that does not see it
-    auctionator_update(c, {2775: 300}, fire=False)
-    auctionator_new_day(c)
-    c.close_ah()
-    c.open_ah()
-    n_chat = len(c.chat)
-    auctionator_update(c, scan, background=10000)
-    ctx.eq(ext_state(c), (True, None), "a whole-AH scan")
-    ctx.eq(len([m for m in list(c.chat)[n_chat:] if "Auctionator" in str(m)]), 1, "... is announced once (three looks at one update)")
-    c.advance(15)
-    ctx.eq(len([m for m in list(c.chat)[n_chat:] if "Auctionator" in str(m)]), 1, "... also after the later looks")
-    t_scan = fnum(db.extScans[db.market].t)
-    ctx.eq(cost(2770, 20)[:2] + (cost(2770, 20)[3],), (800, "ok", True), "an estimate")
-    ctx.eq(cost(2775, 10)[:2], (None, "none"), "Silver Ore: last seen the day before the scan -> not for sale")
-    ctx.eq(cost(2776, 10)[:2], (None, "none"), "Gold Ore: never seen -> not for sale")
-    # the next day (within 12 hours): everything of the scan is one day older, and still in use
-    c.close_ah()
-    c.advance(10 * 3600)
-    auctionator_new_day(c)
-    ctx.eq(ext_state(c), (True, None), "10 hours later, on Auctionator's next day")
-    ctx.eq(cost(2770, 20)[:2], (800, "ok"), "the scan's price, now 1 day old in Auctionator's count")
-    ctx.eq(cost(2775, 10)[:2], (None, "none"), "Silver Ore: 2 days old, older than the scan")
-    # a search in Auctionator after the scan: the newer price of that item is used; it is not a new scan
-    c.open_ah()
-    auctionator_update(c, {2771: 22})
-    ctx.eq(fnum(db.extScans[db.market].t), t_scan, "a search does not move the scan time")
-    ctx.eq(cost(2771, 20)[:2], (440, "ok"), "Tin Ore at the price Auctionator saw in its search")
-    ctx.eq(cost(2770, 20)[:2], (800, "ok"), "Copper Ore still from the scan")
-    # a targeted search of Getrich that is newer than the scan wins
-    c.set_listings(2770, [(55, 100)])
-    db.quickScan = False
-    start_scan(c, "crates", 900)
-    ctx.eq(cost(2770, 20)[:2] + (cost(2770, 20)[3],), (1100, "ok", False), "Getrich's own newer search: exact")
-    c.close_ah()
-    # a neutral Auction House: Auctionator's database does not tell it apart, Getrich does
-    c.M.auctioneer = c.lua.table_from({"npcID": 8661, "name": "Auctioneer Beardo", "neutral": True})
-    c.open_ah()
-    ctx.eq(ext_state(c), (False, "noscan"), "the faction house's scan is not used at a neutral house")
-    ctx.eq(cost(2771, 20)[1], None, "neutral house: no estimate")
-    c.advance(600)
-    auctionator_update(c, {248683: 900, 2770: 80, 2771: 60, 248687: 990, 2772: 70, 2589: 20}, background=20000)
-    ctx.eq(ext_state(c), (True, None), "Auctionator scans the neutral house: used there")
-    ctx.eq(cost(2771, 20)[:2], (1200, "ok"), "neutral prices")
-    c.close_ah()
-    ctx.eq(ext_state(c), (False, "other"), "back at the faction house: Auctionator's database now holds the neutral scan")
-    ctx.check("Neutral" in str(c.eval("local WC = ...; return WC.External:Describe()", WC)), "/gr auc names the other house")
-    ctx.eq(cost(2770, 20)[:2] + (cost(2770, 20)[3],), (1100, "ok", False), "the faction house keeps Getrich's own search of Copper Ore")
-    ctx.eq(cost(2771, 20)[:2], (None, "none"), "... and of Tin Ore (not listed there)")
-    # more than 12 hours after the scan
-    c.M.auctioneer = c.lua.table_from({"npcID": 8719, "name": "Auctioneer Wabang", "neutral": False})
-    c.open_ah()
-    auctionator_update(c, scan, background=30000)
-    ctx.eq(ext_state(c), (True, None), "a new scan of the faction house")
-    c.close_ah()
-    c.advance(11 * 3600)
-    ctx.eq(ext_state(c), (True, None), "11 hours later: still in use")
-    c.advance(2 * 3600)
-    ctx.eq(ext_state(c), (False, "old"), "13 hours later: too old")
-    # "clear scan data" forgets the watched scans too
-    c.open_ah()
-    auctionator_update(c, scan, background=31000)
-    ctx.eq(ext_state(c), (True, None), "scanned again")
-    c.close_ah()
-    c.eval("local WC = ...; WC.Settings:Clear('scans')", WC)
-    ctx.eq(ext_state(c), (False, "noscan"), "Clear scans")
-    check_clean(ctx, c)
-
-
-@scenario("auctionator_watch", "2026.11.1: a whole-AH scan is recognised whether Auctionator tells after storing its prices, before, or several times while storing; a search just before it does not disturb")
-def s_auctionator_watch(ctx):
-    scan = {248683: 500, 2770: 40, 2771: 30, 248687: 600, 2772: 30, 2589: 10}
-    told = lambda c, n0: len([m for m in list(c.chat)[n0:] if str(c.WC.L.EXT_WATCHED) in str(m)])
-
-    def fresh():
-        c = ctx.client(login=False)
-        install_auctionator(c)
-        c.login()
-        c.g("GetrichDB").autoScan = False
-        c.open_ah()
-        c.advance(3)                      # past the hint of the first visit
-        return c, len(c.chat)
-
-    # 1. Auctionator tells first and stores afterwards
-    c, n0 = fresh()
-    c.eval("for _, fn in ipairs(Auctionator.callbacks) do fn() end")
-    ctx.eq(ext_state(c), (False, "noscan"), "told, nothing stored yet")
-    auctionator_update(c, scan, background=10000, fire=False)
-    c.advance(3)
-    ctx.eq(ext_state(c), (True, None), "stored a moment after telling: the second look sees the scan")
-    c.advance(20)
-    ctx.eq(told(c, n0), 1, "announced once")
-    check_clean(ctx, c, "tell first")
-
-    # 2. Auctionator tells several times while it stores
-    c, n0 = fresh()
-    auctionator_update(c, {248683: 500, 2770: 40, 2771: 30})
-    c.advance(1)
-    auctionator_update(c, {248687: 600, 2772: 30, 2589: 10})
-    ctx.eq(ext_state(c), (False, "noscan"), "half way: not a scan yet")
-    c.advance(1)
-    auctionator_update(c, {}, background=10000)
-    ctx.eq(ext_state(c), (True, None), "all stored: a scan, compared with what was known before the first call")
-    rec = c.g("GetrichDB").extScans[c.g("GetrichDB").market]
-    ctx.check(len(lua_list(rec.ids)) >= 10, "the crate items of the whole scan are noted, not only those of the last call (%d)" % len(lua_list(rec.ids)))
-    c.advance(20)
-    ctx.eq(told(c, n0), 1, "announced once")
-    check_clean(ctx, c, "several calls")
-
-    # 2b. Auctionator never tells (no update notice at all): the look every few seconds finds the scan
-    c, n0 = fresh()
-    c.eval("Auctionator.callbacks = {}")
-    auctionator_update(c, scan, background=10000)
-    ctx.eq(ext_state(c), (False, "noscan"), "stored without a notice: not seen yet")
-    c.advance(6)
-    ctx.eq(ext_state(c), (True, None), "... seen at the next look")
-    ctx.eq(told(c, n0), 1, "announced")
-    # ... and a scan that finishes in the last seconds before the window closes is seen when it closes
-    c.advance(600)
-    t_first = fnum(c.g("GetrichDB").extScans[c.g("GetrichDB").market].t)
-    auctionator_update(c, {k: v + 5 for k, v in scan.items()}, background=11000)
-    t_close = fnum(c.eval("return time()"))
-    c.close_ah()
-    ctx.check(t_close > t_first + 500, "(ten minutes after the first scan)")
-    ctx.eq(fnum(c.g("GetrichDB").extScans[c.g("GetrichDB").market].t), t_close, "a scan stored just before the Auction House closed is noted when it closes")
-    # nothing is looked at while the Auction House is closed
-    auctionator_update(c, {k: v + 9 for k, v in scan.items()}, background=12000)
-    c.advance(60)
-    ctx.eq(fnum(c.g("GetrichDB").extScans[c.g("GetrichDB").market].t), t_close, "changes while no Auction House is open are not a scan of it")
-    check_clean(ctx, c, "no notice")
-
-    # 3. a search in Auctionator, and right after it a whole scan
-    c, n0 = fresh()
-    auctionator_update(c, {2770: 41})
-    auctionator_update(c, scan, background=10000)
-    ctx.eq(ext_state(c), (True, None), "the scan after a search")
-    c.advance(20)
-    ctx.eq(told(c, n0), 1, "announced once: the looks left over from the search do nothing")
-    # 4. the same prices again a minute later (nothing changed): not a new scan, the time stays
-    t0 = fnum(c.g("GetrichDB").extScans[c.g("GetrichDB").market].t)
-    c.advance(60)
-    auctionator_update(c, scan, background=10000)
-    ctx.eq(fnum(c.g("GetrichDB").extScans[c.g("GetrichDB").market].t), t0, "an update that changes nothing is not noted as a scan")
-    # 5. a real rescan with moved prices is
-    c.advance(900)
-    auctionator_update(c, {k: v + 3 for k, v in scan.items()}, background=10500)
-    ctx.eq(fnum(c.g("GetrichDB").extScans[c.g("GetrichDB").market].t), t0 + 20 + 60 + 900, "a rescan with new prices moves the time")
-    c.advance(20)
-    ctx.eq(told(c, n0), 2, "announced")
-    check_clean(ctx, c, "search then scan")
-
-
-@scenario("auctionator_midscan", "2026.11.1: an Auctionator scan that finishes while Getrich is searching everything turns that scan into a quick one")
-def s_auctionator_midscan(ctx):
-    c = ctx.client(login=False)
-    install_auctionator(c)
-    c.login()
-    WC = c.WC
-    db = c.g("GetrichDB")
-    db.autoScan = False
-    db.quickTop = 1
-    c.set_listings(248683, [(500, 1)])
-    c.set_listings(2770, [(40, 5), (100, 100)])
-    c.set_listings(2771, [(30, 100)])
-    c.set_listings(248687, [(600, 2)])
-    c.set_listings(2772, [(30, 1), (500, 100)])
-    c.open_ah()
-    ctx.check(not WC.Scanner.IsQuick(), "no Auctionator scan yet: a full scan")
-    WC.Scanner.Start(WC.Scanner, "crates")
-    c.advance(6)
-    ctx.check(WC.Scanner.active and not WC.Scanner.quick, "searching everything")
-    n_before = len(lua_keys(db.results))
-    ctx.check(3 <= n_before <= 12, "a few items searched after 6 seconds (%d)" % n_before)
-    auctionator_update(c, {248683: 500, 2770: 40, 2771: 30, 248687: 600, 2772: 30, 2589: 10}, background=10000)
-    t0 = c.now()
-    c.advance(900, until=lambda: not WC.Scanner.active)
-    ctx.check(not WC.Scanner.active and WC.Scanner.quick, "the scan went on as a quick one and finished")
-    ctx.check(c.now() - t0 < 30, "... within seconds (%.0f s), not the two minutes of a full scan" % (c.now() - t0))
-    e = crate_entry(c, 248683)
-    ctx.eq((str(e.status), fnum(e.crateCost), fnum(e.matCost), bool(e.est)), ("ok", 500, 600, False), "Apprentice Ore: searched exactly")
-    e = crate_entry(c, 248687)
-    ctx.eq((fnum(e.matCost), bool(e.est)), (30 + 19 * 500, False), "Journeyman Ore (the best by estimate): searched exactly")
-    ctx.check(len(lua_keys(db.results)) < 20, "the other crates are left to Auctionator's prices (%d searched)" % len(lua_keys(db.results)))
-    ctx.check(db.scannedAt.crates is not None, "the scan counts as done")
-    check_clean(ctx, c)
-
 
 @scenario("market_ruleset", "2026.11.1: in Forever (regional unique names) the Auction House key is the ruleset, not the realm name; a 2026.11.0 database keyed by realm is renamed")
 def s_market_ruleset(ctx):
@@ -3096,6 +2985,596 @@ def s_market_ruleset(ctx):
     ctx.check(db.results[2771] is None, "the realm-keyed leftovers are not mixed in")
     ctx.check(db.markets["Classic Beta PvP 2|Horde"] is not None, "... they are parked under the realm key")
     check_clean(ctx, c, "ruleset unreadable for a session")
+
+
+# ===================================================================================================================
+# 2026.11.2: prices from Auctionator, no scanning; the check buttons search a handful of entries exactly
+# ===================================================================================================================
+def auctionator_dump(c):
+    """Auctionator's database of client c: {itemID: (price, age in days)}."""
+    a, b = c.eval("local a, b = {}, {} for id, p in pairs(Auctionator.prices) do a[id] = p[1]; b[id] = p[2] end return a, b")
+    return {int(k): (int(a[k]), int(b[k])) for k in a.keys()}
+
+
+def auctionator_load(c, dump):
+    """Give client c Auctionator with the database `dump` (what Auctionator saved in an earlier session)."""
+    install_auctionator(c)
+    c.eval("local p, a = ...; for id, v in pairs(p) do Auctionator.prices[id] = { v, a[id] } end",
+           c.lua.table_from({k: v[0] for k, v in dump.items()}), c.lua.table_from({k: v[1] for k, v in dump.items()}))
+    if c.WC.External is not None:
+        c.eval("local WC = ...; WC.External:Invalidate()", c.WC)
+
+
+def ext_info(c):
+    """(exact, age text) of the prices in use."""
+    return multi(c.eval("local WC = ...; local X = WC.External; X:Invalidate(); local s = X:State(); return s.exact, X:AgeText()", c.WC), 2)
+
+
+def watched_lines(c, start=0):
+    return [m for m in c.chat[start:] if str(c.WC.L.EXT_WATCHED) in str(m)]
+
+
+@scenario("auctionator_login", "2026.11.2: Auctionator's prices are in use right after login, AH closed, nothing searched: ranking, estimates, age by the day, sold-out items")
+def s_auc_login(ctx):
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
+    WC = c.WC
+    setup_market_130(c)
+    auctionator_scan_ah(c, fire=False)        # Auctionator's database from an earlier session (Getrich never saw the scan)
+    ctx.eq(ext_state(c), (True, None), "Auctionator's prices in use at login")
+    ctx.eq(ext_info(c), (False, str(WC.L.EXT_TODAY)), "a scan Getrich did not see is dated by its day")
+    crates = lua_list(c.eval("local WC = ...; return WC:VisibleCrates(WC:EvaluateCrates())", WC))
+    ranked = [e for e in crates if e.perFavor]
+    ctx.check(len(ranked) >= 10, "crates ranked from Auctionator's prices alone: %d" % len(ranked))
+    ctx.check(all(e.est for e in ranked), "every crate price is an estimate until it is checked")
+    writs = [e for e in lua_list(c.eval("local WC = ...; return WC:VisibleWrits(WC:EvaluateWrits())", WC)) if e.perRep]
+    ctx.check(len(writs) >= 5 and all(e.est for e in writs), "writs ranked from Auctionator's prices alone, as estimates: %d" % len(writs))
+    best, est = multi(c.eval("local WC = ...; return WC:BestPerFavor()", WC), 2)
+    ctx.check(best is not None and est is True, "BestPerFavor is an estimate: %s %s" % (best, est))
+    # the window, Auction House closed
+    c.slash("/gr crates")
+    c.advance(1)
+    t = c.texts()
+    ctx.check(any("~" in x for x in t), "estimates are marked with ~ on the crates tab")
+    ctx.check(any("Auctionator" in x and str(WC.L.EXT_TODAY) in x for x in t), "the bar says the prices are Auctionator's, from today: %s" % [x for x in t if "Auctionator" in x][:3])
+    ctx.eq(len(c.chat), 0, "nothing to say in the chat: %s" % list(c.chat))
+    st = c.ah_stats()
+    ctx.eq((st["searches"], st["browses"]), (0, 0), "nothing was asked of the Auction House")
+    ok = WC.Scanner.Start(WC.Scanner, "crates")
+    ctx.check(not ok, "a check needs the Auction House open")
+    # older data
+    auctionator_new_day(c)
+    ctx.eq(ext_info(c), (False, str(WC.L.EXT_YESTERDAY)), "one day later")
+    auctionator_new_day(c)
+    ctx.eq(ext_info(c), (False, str(WC.L.EXT_DAYS).replace("%d", "2")), "two days later")
+    ctx.eq(ext_state(c), (True, None), "old prices are still used (their age is shown)")
+    # an item Auctionator saw before its last full scan but not in it: sold out. One it saw after it: for sale.
+    c.eval("Auctionator.prices[2775] = { 33, 5 }; Auctionator.prices[2776] = { 44, 0 }")
+    c.eval("local WC = ...; WC.External:Invalidate()", WC)
+    ctx.eq(multi(WC.CostForAny(WC, 2775, 3), 2), (None, "none"), "Silver Ore: last seen before the full scan -> not for sale")
+    cost, status, info = multi(WC.CostForAny(WC, 2776, 3), 3)
+    ctx.eq((cost, status, info and info.source), (132, "est", "auctionator"), "Gold Ore: seen after the full scan -> 3 x 44")
+    c.eval("Auctionator.prices[3858] = nil")
+    c.eval("local WC = ...; WC.External:Invalidate()", WC)
+    ctx.eq(multi(WC.CostForAny(WC, 3858, 1), 2), (None, "none"), "Mithril Ore: Auctionator has never seen it -> not for sale")
+    ctx.eq(first(WC.UnitPrice(WC, 2775)), None, "UnitPrice of a sold-out item")
+    check_clean(ctx, c)
+
+
+@scenario("auctionator_relog", "2026.11.2: a scan Getrich watched is dated to the minute and still is after logging out and in; a record too old to be Auctionator's last scan is not used")
+def s_auc_relog(ctx):
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
+    WC = c.WC
+    setup_market_130(c)
+    c.open_ah()
+    c.advance(2)
+    auctionator_scan_ah(c)                    # Auctionator's full scan, with Getrich watching
+    t_scan = c.server_time()
+    ctx.eq(len(watched_lines(c)), 1, "one chat line when Auctionator finished its scan: %s" % list(c.chat))
+    db = c.g("GetrichDB")
+    rec = db.extScans[db.market]
+    ctx.check(rec is not None and int(rec.t) == t_scan and len(lua_list(rec.ids)) >= 10, "the scan is noted for this house: %s" % (rec and (rec.t, len(lua_list(rec.ids))),))
+    c.advance(600)
+    ctx.eq(ext_info(c), (True, str(WC.L.EXT_AGO) % (str(WC.L.UI_AGE_MIN) % 10)), "ten minutes later")
+    best1 = multi(c.eval("local WC = ...; return WC:BestPerFavor()", WC), 2)
+    c.close_ah()
+    text = c.logout_sv()
+    dump = auctionator_dump(c)
+    # the next session, 3 hours later: nothing scanned, Auction House not even opened
+    c2 = ctx.client(sv=text, login=False, server_time=t_scan + 3 * 3600)
+    auctionator_load(c2, dump)
+    c2.login()
+    WC2 = c2.WC
+    ctx.eq(ext_state(c2), (True, None), "prices in use right after the next login")
+    ctx.eq(ext_info(c2), (True, str(WC2.L.EXT_AGO) % (str(WC2.L.UI_AGE_HOUR) % 3)), "the age of the scan is still known")
+    best2 = multi(c2.eval("local WC = ...; return WC:BestPerFavor()", WC2), 2)
+    ctx.eq(best2, best1, "the same best crate price as before logging out")
+    ctx.eq((c2.ah_stats()["searches"], c2.ah_stats()["browses"]), (0, 0), "nothing searched")
+    # Auctionator scanned again while Getrich was not loaded, two days later: the record of the old scan is not its date
+    c3 = ctx.client(sv=text, login=False, server_time=t_scan + 50 * 3600)
+    auctionator_load(c3, dump)                # (every price seen "today": the scan is from the day of this session)
+    c3.login()
+    ctx.eq(ext_state(c3), (True, None), "prices in use")
+    ctx.eq(ext_info(c3), (False, str(c3.WC.L.EXT_TODAY)), "a record from 50 hours ago cannot date a scan of today")
+    check_clean(ctx, c)
+    check_clean(ctx, c2, "next session")
+    check_clean(ctx, c3, "two days later")
+
+
+@scenario("auctionator_watch", "2026.11.2: what counts as Auctionator's full scan (many crate and writ items at once), single searches, scans stored in parts, without a callback, right before the AH closes")
+def s_auc_watch(ctx):
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
+    WC = c.WC
+    db = c.g("GetrichDB")
+    setup_market_130(c)
+    count_price_fires(c)
+    fires = lambda: len(lua_list(c.M.priceFires))
+    scans = lambda: int(c.eval("local M = ...; return M.extScanFires or 0", c.M))
+    c.eval("local WC, M = ...; WC:On('EXTERNAL_SCAN', function() M.extScanFires = (M.extScanFires or 0) + 1 end)", WC, c.M)
+    c.open_ah()
+    c.advance(2)
+    # a search for one item in Auctionator: the price is used at once, but it is not a scan
+    auctionator_update(c, {2770: 77})
+    ctx.eq(ext_state(c), (False, "noscan"), "one item is not a full scan")
+    # a shopping list of crate materials (many items, but no writ items): not a scan either
+    auctionator_update(c, {i: 500 + k for k, i in enumerate(AUC_BACKGROUND_CRATE)})
+    ctx.eq(ext_state(c), (False, "noscan"), "crate materials alone are not a full scan")
+    ctx.eq((len(watched_lines(c)), db.extScans[db.market], scans()), (0, None, 0), "nothing noted so far")
+    # the full scan
+    n0 = fires()
+    auctionator_scan_ah(c)
+    t1 = c.server_time()
+    ctx.eq(ext_state(c), (True, None), "the full scan is in use")
+    ctx.eq((len(watched_lines(c)), scans()), (1, 1), "announced once")
+    ctx.eq(int(db.extScans[db.market].t), t1, "noted with its time")
+    ctx.check(fires() > n0, "PRICES_UPDATED after the scan")
+    ctx.eq(first(WC.UnitPrice(WC, 2589)), 10, "Linen Cloth from the scan")
+    # later single searches: prices follow, the scan's date stays
+    c.advance(120)
+    n0 = fires()
+    auctionator_update(c, {2589: 9})
+    ctx.eq(first(WC.UnitPrice(WC, 2589)), 9, "a single search in Auctionator updates the price at once")
+    ctx.check(fires() > n0, "PRICES_UPDATED after a single search")
+    ctx.eq((int(db.extScans[db.market].t), len(watched_lines(c)), scans()), (t1, 1, 1), "a single search is not a new scan")
+    # a second scan, stored in two parts and without telling anyone: found by the look every 5 seconds, announced once
+    c.advance(600)
+    c.eval("""local WC, crateBg = ...
+      for _, id in pairs(crateBg) do Auctionator.prices[id] = { 610000, 0 } end""", WC, c.lua.table_from(AUC_BACKGROUND_CRATE))
+    c.advance(6)
+    ctx.eq(len(watched_lines(c)), 1, "half a scan (crate items only) is not announced")
+    c.eval("local WC = ...; for i = 1, 8 do Auctionator.prices[WC.WRITS[i].item] = { 610000 + i, 0 } end", WC)
+    c.advance(6)
+    t2 = int(db.extScans[db.market].t)
+    ctx.check(t2 > t1 + 600, "the second scan is noted with its own time (%d after the first)" % (t2 - t1))
+    ctx.eq((len(watched_lines(c)), scans()), (2, 2), "the second scan is announced once")
+    c.advance(30)
+    ctx.eq((len(watched_lines(c)), scans(), int(db.extScans[db.market].t)), (2, 2, t2), "nothing more while nothing changes")
+    # Auctionator calling back 500 times while it stores something costs one look, not 500
+    c.advance(10)
+    n_sample = int(c.eval("local WC = ...; local n = 0 for _, w in ipairs(WC.WRITS) do n = n + 2 end for _, x in ipairs(WC.CRATES) do n = n + 1 + #x.opts end return n", WC))
+    c.eval("Auctionator.calls = 0; for i = 1, 500 do for _, fn in ipairs(Auctionator.callbacks) do fn() end end")
+    c.advance(1)
+    calls = int(c.eval("return Auctionator.calls"))
+    ctx.check(0 < calls <= 2 * n_sample, "500 callbacks at once made %d API calls (one look is at most %d)" % (calls, 2 * n_sample))
+    # midnight: Auctionator's day counter moves on while the Auction House is open. Every age goes up by one, no
+    # price changes: that is not a scan, and the scan Getrich saw keeps its date
+    auctionator_new_day(c)
+    c.advance(12)
+    ctx.eq((len(watched_lines(c)), scans(), int(db.extScans[db.market].t)), (2, 2, t2), "the day counter moving on is not a scan")
+    ctx.eq(ext_state(c), (True, None), "the prices stay in use after midnight")
+    ctx.eq(ext_info(c)[0], True, "... and the scan keeps the time Getrich saw it at")
+    # a third scan finishes just before the Auction House is closed: the last look catches it
+    c.advance(300)
+    c.eval("""local WC, crateBg = ...
+      for _, id in pairs(crateBg) do Auctionator.prices[id] = { 620000, 0 } end
+      for i = 1, 8 do Auctionator.prices[WC.WRITS[i].item] = { 620000 + i, 0 } end""", WC, c.lua.table_from(AUC_BACKGROUND_CRATE))
+    c.advance(1)
+    key = str(db.market)
+    c.close_ah()
+    t3 = int(db.extScans[key].t)
+    ctx.check(t3 > t2 + 300, "the scan right before closing is noted for the house that was open")
+    ctx.eq(len(watched_lines(c)), 3, "... and announced")
+    # with the Auction House closed nothing looks any more
+    c.advance(60)
+    ctx.check(not c.running_timers(), "timers with the AH closed: %s" % c.running_timers())
+    # history: the watched scans recorded the items Getrich follows
+    H = c.server_time() // 3600
+    rec = db.history[2589] and db.history[2589].h[H]
+    ctx.check(rec is not None and int(rec.min) == 9 and rec.qty is None, "history record of Linen Cloth from the watched scan: %s" % (rec and (rec.min, rec.qty),))
+    # the Prices tab draws records without a quantity (Auctionator does not know how many are listed)
+    WC.Store.SetWatch(WC.Store, 2589, True)
+    c.slash("/gr history")
+    c.advance(1)
+    ctx.check(any("Linen Cloth" in x for x in c.texts(clip=True)), "Prices tab does not list the watched Linen Cloth")
+    for w in c.regions(c.g("GetrichFrame")):
+        if w.IsVisible(w):
+            c.hover(w)
+    check_clean(ctx, c)
+
+
+@scenario("auctionator_missing", "2026.11.2: without Auctionator, or before its first full scan, Getrich says what is missing (once per session) and checks nothing")
+def s_auc_missing(ctx):
+    # no Auctionator at all
+    c = ctx.client()
+    WC = c.WC
+    setup_market_130(c)
+    ctx.eq(ext_state(c), (False, "noapi"), "no Auctionator")
+    c.open_ah()
+    c.advance(3)
+    hint = str(WC.L.EXT_NOAPI)
+    ctx.eq(sum(1 for m in c.chat if hint in str(m)), 1, "one hint in the chat after opening the Auction House: %s" % list(c.chat))
+    t = c.texts()
+    ctx.check(any(hint in x for x in t), "the bar says what is missing")
+    c.advance(30)
+    st = c.ah_stats()
+    ctx.eq((st["searches"], st["browses"]), (0, 0), "nothing is asked of the Auction House")
+    c.close_ah()
+    c.open_ah()
+    c.advance(3)
+    ctx.eq(sum(1 for m in c.chat if hint in str(m)), 1, "the hint is not repeated in the same session")
+    n = len(c.chat)
+    ok = WC.Scanner.Start(WC.Scanner, "crates")
+    ctx.check(not ok and not WC.Scanner.active, "nothing to check without prices")
+    ctx.check(any(hint in str(m) for m in c.chat[n:]), "pressing the check button says why: %s" % c.chat[n:])
+    ranked = [e for e in lua_list(c.eval("local WC = ...; return WC:EvaluateCrates()", WC)) if e.perFavor]
+    ctx.eq(len(ranked), 0, "no prices -> nothing ranked")
+    for tab in TABS:
+        c.slash("/gr " + tab)
+        c.advance(0.3)
+    check_clean(ctx, c, "no Auctionator")
+    # Auctionator installed, but it has only searched a few items so far
+    c2 = ctx.client(login=False)
+    install_auctionator(c2)
+    c2.login()
+    WC2 = c2.WC
+    setup_market_130(c2)
+    auctionator_update(c2, {2770: 40, 2589: 10, 2318: 400}, fire=False)
+    ctx.eq(ext_state(c2), (False, "noscan"), "no full scan yet")
+    ctx.eq(multi(WC2.CostForAny(WC2, 2770, 1), 2), (None, None), "single prices are not used without a full scan")
+    c2.open_ah()
+    c2.advance(3)
+    hint2 = str(WC2.L.EXT_NOSCAN)
+    ctx.eq(sum(1 for m in c2.chat if hint2 in str(m)), 1, "one hint about the missing full scan: %s" % list(c2.chat))
+    # ... then the player runs Auctionator's full scan: everything is there, without doing anything in Getrich
+    auctionator_scan_ah(c2)
+    ctx.eq(ext_state(c2), (True, None), "prices in use as soon as Auctionator's scan is stored")
+    ctx.eq(len(watched_lines(c2)), 1, "the scan is announced")
+    ranked = [e for e in lua_list(c2.eval("local WC = ...; return WC:EvaluateCrates()", WC2)) if e.perFavor]
+    ctx.check(len(ranked) >= 10, "crates ranked after the scan: %d" % len(ranked))
+    c2.advance(1)
+    t = c2.texts()
+    ctx.check(any("Auctionator" in x and str(WC2.L.UI_AGE_MIN) % 1 in x for x in t), "the bar shows the new scan's age: %s" % [x for x in t if "Auctionator" in x][:3])
+    ctx.check(not any(hint2 in x for x in t), "the bar no longer says a scan is missing")
+    check_clean(ctx, c2, "no full scan")
+
+
+# seven crates for sale; Strange Dust has one unit at 20c and the rest at 700c (a single cheap listing)
+DEPTH_MARKET = {
+    248685: [(1000, 5)], 10940: [(20, 1), (700, 500)],      # A: Apprentice Enchanting: 20 Strange Dust
+    248683: [(1200, 5)], 2770: [(60, 500)],                 # B: Apprentice Ore: 20 Copper Ore
+    248684: [(1500, 3)], 2589: [(30, 400)],                 # C: Apprentice Cloth: 40 Linen Cloth
+    248702: [(4000, 2)], 2996: [(150, 100)],                # D: 20 Bolt of Linen Cloth
+    248703: [(5000, 2)], 2840: [(200, 100)],                # E: 20 Copper Bar
+    248704: [(6000, 2)], 4359: [(250, 100)],                # F: 16 Handful of Copper Bolts
+    248688: [(7000, 2)], 2592: [(300, 100)],                # G: 20 Wool Cloth
+}
+
+
+@scenario("check_crates_depth", "2026.11.2: 'Check the best' searches the best five crates exactly; a single cheap listing no longer makes a crate the best; what moves up is checked too")
+def s_check_crates(ctx):
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
+    WC = c.WC
+    c.clear_listings()
+    for iid, rows in DEPTH_MARKET.items():
+        c.set_listings(iid, rows)
+    c.open_ah()
+    c.advance(1)
+    auctionator_scan_ah(c)
+    per = lambda: [(int(e.crate.id), fnum(e.perFavor), bool(e.est)) for e in lua_list(c.eval("local WC = ...; return WC:VisibleCrates(WC:EvaluateCrates())", WC)) if e.perFavor]
+    # estimates: cheapest price x quantity. A: (1000 + 20 x 20 - 250) / 5 = 230 -- the bait; B: (1200 + 1200 - 250) / 5 = 430;
+    # C: (1500 + 1200 - 250) / 5 = 490; D: (4000 + 3000 - 500) / 10 = 650; E: (5000 + 4000 - 500) / 10 = 850;
+    # F: (6000 + 4000 - 500) / 10 = 950; G: (7000 + 6000 - 500) / 10 = 1250
+    ctx.eq(per(), [(248685, 230.0, True), (248683, 430.0, True), (248684, 490.0, True), (248702, 650.0, True),
+                   (248703, 850.0, True), (248704, 950.0, True), (248688, 1250.0, True)], "estimates before the check")
+    ctx.eq(multi(c.eval("local WC = ...; return WC:BestPerFavor()", WC), 2), (230.0, True), "the estimate takes the bait")
+    c.slash("/gr crates")
+    ok, secs = start_scan(c, "crates")
+    ctx.require(ok and not WC.Scanner.active, "the crates check did not run")
+    st = c.ah_stats()
+    searched = set(st["searchByItem"].keys())
+    # round 1: the five best by estimate (A-E), crate + every bundle material. A's real cost: 20 + 19 x 700 = 13320 ->
+    # (1000 + 13320 - 250) / 5 = 2814, last. F moves into the best five and is searched in round 2. G is never searched.
+    expect = {248685, 10940, 10939, 10978, 11084, 248683, 2770, 2771, 248684, 2589, 2318, 248702, 4231, 2996,
+              248703, 2840, 3576, 2841, 248704, 4359, 4361, 4363}
+    ctx.eq(searched, expect, "items searched by the check")
+    ctx.eq(st["browses"], 0, "no browse query")
+    ctx.eq(int(WC.Scanner.round), 2, "rounds of the check")
+    ctx.check(secs < 60, "the check took %.0f s" % secs)
+    ctx.note("crates check: %d items searched in %.0f s" % (len(searched), secs))
+    ctx.eq(per(), [(248683, 430.0, False), (248684, 490.0, False), (248702, 650.0, False), (248703, 850.0, False),
+                   (248704, 950.0, False), (248688, 1250.0, True), (248685, 2814.0, False)], "after the check: exact, the bait is last")
+    ctx.eq(multi(c.eval("local WC = ...; return WC:BestPerFavor()", WC), 2), (430.0, False), "the best Favor price is exact now")
+    ctx.check(c.g("GetrichDB").scannedAt.crates, "the time of the check is kept")
+    t = c.texts()
+    ctx.check(any(ctx.money(430) in x and "~" not in x for x in t), "the best row shows 4s 30c without ~: %s" % [x for x in t if ctx.money(430) in x][:4])
+    # a second check right away finds the same entries (they are searched again: the market may have moved)
+    n0 = st["searches"]
+    ok, _ = start_scan(c, "crates")
+    ctx.check(ok and c.ah_stats()["searches"] > n0, "a second check searches again")
+    # Auctionator scans again 20 minutes later: same cheapest prices -> the checked order books still stand
+    c.advance(1200)
+    auctionator_scan_ah(c, background=510000)
+    ctx.eq(per()[0], (248683, 430.0, False), "a new scan with the same cheapest prices keeps the checked crates exact")
+    ctx.eq(per()[-1], (248685, 2814.0, False), "... and the bait exposed")
+    # the cheap Copper Ore is bought, the next scan sees another price: that crate is an estimate again
+    c.set_listings(2770, [(65, 500)])
+    c.advance(1200)
+    auctionator_scan_ah(c, background=520000)
+    e = crate_entry(c, 248683)
+    ctx.eq((fnum(e.perFavor), bool(e.est)), ((1200 + 20 * 65 - 250) / 5.0, True), "a changed price in a newer scan replaces the checked one (estimate)")
+    check_clean(ctx, c)
+
+
+@scenario("check_until_exact", "2026.11.2: when Auctionator's best crates are gone from the Auction House, the check goes on, round after round, until the best five on the list are all exact")
+def s_check_rounds(ctx):
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
+    WC = c.WC
+    c.clear_listings()
+    # twelve crates with one bundle material each; Auctionator's scan saw all of them
+    crates = [x for x in lua_list(WC.CRATES)][:12]
+    mats = {}
+    for k, x in enumerate(crates):
+        o = lua_list(x.opts)[0]
+        mats[int(x.id)] = (int(o[1]), int(o[2]))
+        c.set_listings(int(x.id), [(1000 + 100 * k, 3)])
+        c.set_listings(int(o[1]), [(50, 2000)])
+    order = lambda: [(int(e.crate.id), bool(e.est)) for e in lua_list(c.eval("local WC = ...; return WC:VisibleCrates(WC:EvaluateCrates())", WC)) if e.perFavor]
+    c.open_ah()
+    c.advance(1)
+    auctionator_scan_ah(c)
+    by_est = [i for i, _ in order()]
+    ctx.eq(len(by_est), 12, "twelve crates ranked by estimate")
+    # an hour later the seven best crates of the scan are sold out
+    c.advance(3600)
+    gone = by_est[:7]
+    for i in gone:
+        c.set_listings(i, [])
+    c.slash("/gr crates")
+    ok = WC.Scanner.Start(WC.Scanner, "crates")
+    ctx.require(ok, "the crates check did not start")
+    seen_round = set()
+    for _ in range(400):
+        if not WC.Scanner.active:
+            break
+        c.advance(0.5)
+        if WC.Scanner.active:
+            seen_round.add(int(WC.Scanner.round))
+            if int(WC.Scanner.round) == 2:
+                ctx.check(any((str(WC.L.UI_ROUND_FMT) % (2, str(WC.L.SCAN_PH_QUICK) % 5)) in x for x in c.texts()),
+                          "round 2 is not shown in the bar: %s" % [x for x in c.texts() if "5" in x][:5])
+    ctx.require(not WC.Scanner.active, "the check did not finish")
+    # round 1: the five best by estimate, all gone; round 2: the next five (two more gone, three there);
+    # round 3: the two that moved into the best five; then nothing new
+    ctx.eq(seen_round, {1, 2, 3}, "rounds")
+    after = order()
+    ctx.eq([i for i, _ in after], by_est[7:], "what is left on the list: the five crates that are really for sale")
+    ctx.check(all(not est for _, est in after), "the best five are all exact after the check: %s" % after)
+    searched = set(c.ah_stats()["searchByItem"].keys())
+    ctx.check(all(i in searched for i in by_est), "every crate was searched on the way down the list")
+    ctx.eq(c.ah_stats()["browses"], 0, "no browse query")
+    check_clean(ctx, c)
+
+
+@scenario("check_writs", "2026.11.2: the writs check searches the best five writs and the items they ask for, nothing else")
+def s_check_writs(ctx):
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
+    WC = c.WC
+    setup_market_130(c)
+    c.open_ah()
+    c.advance(1)
+    auctionator_scan_ah(c)
+    vis = lambda: [e for e in lua_list(c.eval("local WC = ...; return WC:VisibleWrits(WC:EvaluateWrits())", WC)) if e.perRep and not e.receipt]
+    before = vis()
+    ctx.check(len(before) >= 6 and all(e.est for e in before), "writs ranked as estimates before the check: %d" % len(before))
+    top5 = [(int(e.writ.writ), int(e.writ.item)) for e in before[:5]]
+    c.slash("/gr writs")
+    ok, secs = start_scan(c, "writs")
+    ctx.require(ok and not WC.Scanner.active, "the writs check did not run")
+    st = c.ah_stats()
+    searched = set(st["searchByItem"].keys())
+    all_writ_ids = {int(w.writ) for w in lua_list(WC.WRITS)} | {int(w.item) for w in lua_list(WC.WRITS)}
+    ctx.check(searched <= all_writ_ids, "only writs and their items are searched: %s" % sorted(searched - all_writ_ids))
+    for w, i in top5:
+        ctx.check(w in searched and i in searched, "writ %d and its item %d (best five by estimate) were not searched" % (w, i))
+    ctx.check(len(searched) <= 30 and secs < 60, "the check searched %d items in %.0f s" % (len(searched), secs))
+    ctx.note("writs check: %d items searched in %.0f s" % (len(searched), secs))
+    after = vis()
+    ctx.check(all(not e.est for e in after[:5]), "the best five writs are exact after the check: %s" % [(int(e.writ.writ), bool(e.est)) for e in after[:6]])
+    ctx.check(c.g("GetrichDB").scannedAt.writs, "the time of the check is kept")
+    check_clean(ctx, c)
+
+
+@scenario("check_craft", "2026.11.2: the crafting check searches what the most profitable recipes buy at the Auction House and what they make; skill-up mode: the route's shopping list")
+def s_check_craft(ctx):
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
+    WC = c.WC
+    c.open_profession(164)
+    c.advance(3)
+    c.close_profession()
+    c.advance(1)
+    for iid, rows in CRAFT_LISTINGS.items():
+        c.set_listings(iid, rows)
+    c.open_ah()
+    c.advance(1)
+    ok = WC.Scanner.Start(WC.Scanner, "craft")
+    ctx.check(not ok, "nothing to check before Auctionator has prices")
+    auctionator_scan_ah(c)
+    P = WC.Profit
+    e = P.CraftEntry(P, 9983)
+    # Copper Claymore from Auctionator's cheapest prices: 1 Light Leather 30 + 10 Copper Bar x 50 + 2 Weak Flux (vendor) 200
+    # + 1 Rough Grinding Stone 25 = 755 (really 815: only 4 bars are listed at 50)
+    ctx.eq((fnum(e.cost), bool(e.est)), (755.0, True), "9983 cost from Auctionator: an estimate")
+    want = [int(x) for x in lua_list(P.CheckItems(P, 5))]
+    ctx.check(2840 in want and 7955 in want and 2880 not in want, "check list: Copper Bar and the Claymore, not the vendor's Weak Flux: %s" % want)
+    c.slash("/gr craft")
+    ok, secs = start_scan(c, "craft")
+    ctx.require(ok and not WC.Scanner.active, "the crafting check did not run")
+    searched = set(c.ah_stats()["searchByItem"].keys())
+    ctx.eq(searched, set(want), "items searched by the crafting check")
+    e = P.CraftEntry(P, 9983)
+    ctx.eq((fnum(e.cost), bool(e.est)), (815.0, False), "9983 cost after the check: exact (4 x 50 + 6 x 60 for the bars)")
+    ctx.check(c.g("GetrichDB").scannedAt.craft, "the time of the check is kept")
+    check_clean(ctx, c)
+    # skill-up mode (the Tailoring character, skill 20): the route's materials (not the vendor's) and what its steps make
+    c, ck = tailoring_setup(ctx, scan=False)
+    WC = c.WC
+    P = WC.Profit
+    install_auctionator(c)
+    for iid, rows in TAILOR_LISTINGS.items():
+        c.set_listings(iid, rows)
+    auctionator_scan_ah(c, fire=False)
+    db = c.g("GetrichDB")
+    db.craftMode, db.levelProf = "level", 197
+    WC.Fire(WC, "SETTINGS_CHANGED", "craftMode")
+    plan = WC.Leveling.Plan(WC.Leveling, ck, 197)
+    mats = [int(m.itemID) for m in lua_list(plan.mats) if str(m.source) != "vendor"]
+    outs = [int(x.itemID) for x in lua_list(plan.steps)]
+    want = [int(x) for x in lua_list(P.CheckItems(P, 5))]
+    ctx.check(len(mats) > 0 and len(outs) > 0 and set(want) == set(mats) | set(outs),
+              "skill-up check list = the route's AH materials + products: %s vs %s + %s" % (want, mats, outs))
+    c.open_ah()
+    c.advance(1)
+    c.slash("/gr craft")
+    ok, secs = start_scan(c, "craft")
+    ctx.require(ok and not WC.Scanner.active, "the skill-up check did not run")
+    ctx.eq(set(c.ah_stats()["searchByItem"].keys()), set(want), "items searched by the skill-up check")
+    check_clean(ctx, c, "skill-up")
+
+
+@scenario("de_cold_cache", "2026.11.2: right after login (empty item cache, AH closed) the gear Auctionator saw is valued from the built-in item table; the check searches the enchanting materials")
+def s_de_cold(ctx):
+    c = ctx.client(cached=False, login=False)
+    install_auctionator(c)
+    c.login()
+    WC = c.WC
+    for iid, rows in DE_PRICES.items():
+        c.set_listings(iid, rows)
+    c.set_listings(241089, [(200, 1)])        # Scarlet Dagger (a Forever item, ID >= 240000)
+    c.set_listings(4800, [(565, 1)])          # Mighty Chain Pants
+    auctionator_scan_ah(c, fire=False)        # Auctionator's database from an earlier session
+    ctx.check(not c.eval("return C_Item.IsItemDataCachedByID(241089) or C_Item.IsItemDataCachedByID(4800)"), "(the two items are not in the client's cache)")
+    lst = lua_list(first(WC.Profit.Disenchant(WC.Profit)))
+    ah = {int(e.itemID): e for e in lst if e.source == "ah"}
+    ctx.eq(sorted(ah), [4800, 241089], "gear for sale, known without loading an item")
+    # Scarlet Dagger (weapon q2 ilvl 10, band 5-15): LME 1.2 x 300 + SD 0.3 x 40 = 372 x 0.95 = 353.4; bought for 200
+    e = ah.get(241089)
+    ctx.eq(e and (str(e.status), fnum(e.buy), round(fnum(e.value), 6), round(fnum(e.gain), 6), int(e.ilvl)), ("ok", 200.0, 353.4, 153.4, 10), "Scarlet Dagger from the table")
+    # Mighty Chain Pants (armor q2 ilvl 23, band 21-25): 413.25; bought for 565 -> a loss
+    e = ah.get(4800)
+    ctx.eq(e and (str(e.status), fnum(e.buy), round(fnum(e.value), 6), round(fnum(e.gain), 6), int(e.ilvl)), ("ok", 565.0, 413.25, -151.75, 23), "Mighty Chain Pants from the table")
+    ctx.eq(fnum(ah[4800].sell), 1221.0, "vendor price from the built-in table until the client has the item")
+    # the tab, and its check: the enchanting materials are searched exactly, nothing else
+    c.open_ah()
+    c.advance(1)
+    c.slash("/gr de")
+    c.advance(2)
+    ctx.check(any("Scarlet Dagger" in x for x in c.texts(clip=True)), "the Disenchant tab lists the Scarlet Dagger")
+    ok, secs = start_scan(c, "de")
+    ctx.require(ok and not WC.Scanner.active, "the disenchant check did not run")
+    mats = {int(x) for x in lua_keys(WC.DE.mats)}
+    ctx.eq(set(c.ah_stats()["searchByItem"].keys()), mats, "the check searches the enchanting materials")
+    ctx.check(c.g("GetrichDB").scannedAt.de, "the time of the check is kept")
+    check_clean(ctx, c)
+
+
+@scenario("price_precedence", "2026.11.2: which price is used: a check newer than Auctionator's scan; an older check only while the scan shows the same cheapest price and the check is under a day old; else Auctionator's")
+def s_precedence(ctx):
+    c = ctx.client(login=False)
+    install_auctionator(c)
+    c.login()
+    WC = c.WC
+    c.open_ah()
+    c.advance(2)
+    auctionator_update(c, {2770: 50, 2771: 60, 2775: 70, 2776: 80, 2772: 90, 3858: 95}, background=500000)
+    T = c.server_time()
+    ctx.eq(ext_info(c)[0], True, "the scan was watched")
+    hour, day = 3600, 86400
+    c.eval("""local db, T = ...
+      local function listed(min, t, rows) return { status = "listed", min = min, avail = 105, time = t, entries = rows } end
+      db.results[2770] = listed(50, T - 3600, { { 50, 5 }, { 90, 100 } })          -- older, same cheapest price
+      db.results[2771] = listed(55, T - 3600, { { 55, 5 }, { 90, 100 } })          -- older, another price
+      db.results[2775] = listed(70, T - 2 * 86400, { { 70, 5 }, { 90, 100 } })     -- same price, but two days old
+      db.results[2776] = listed(99, T + 60, { { 99, 5 }, { 120, 100 } })           -- newer than the scan
+      db.results[3575] = { status = "none", avail = 0, time = T - 3600 }           -- nothing then, nothing in the scan
+      db.results[2772] = { status = "none", avail = 0, time = T - 3600 }           -- nothing then, for sale in the scan
+      db.results[3858] = { status = "timeout", avail = 0, time = T + 60 }          -- no answer""", c.g("GetrichDB"), T)
+    WC.Fire(WC, "PRICES_UPDATED", "test")
+
+    def cost(iid, qty=10):
+        cst, status, info = multi(WC.CostForAny(WC, iid, qty), 3)
+        return (fnum(cst), status, info and str(info.source))
+    ctx.eq(cost(2770), (5 * 50 + 5 * 90, "ok", "search"), "older check, the scan shows the same cheapest price: the order book stands")
+    ctx.eq(cost(2771), (600, "est", "auctionator"), "older check, the scan shows another price: Auctionator's price")
+    ctx.eq(cost(2775), (700, "est", "auctionator"), "same cheapest price, but the check is two days old: Auctionator's price")
+    ctx.eq(cost(2776), (5 * 99 + 5 * 120, "ok", "search"), "a check newer than the scan wins")
+    ctx.eq(cost(3575), (None, "none", "search"), "nothing found then and not in the scan: not for sale")
+    ctx.eq(cost(2772), (900, "est", "auctionator"), "nothing found then, but the newer scan saw it")
+    ctx.eq(cost(3858), (950, "est", "auctionator"), "a search without an answer: Auctionator's price")
+    ctx.eq(multi(WC.UnitPrice(WC, 2770), 3)[::2], (50, "search"), "UnitPrice source: search")
+    ctx.eq(multi(WC.UnitPrice(WC, 2771), 3)[::2], (60, "auctionator"), "UnitPrice source: Auctionator")
+    # without Auctionator's prices (it is switched off the next session) the checks are all there is
+    c.eval("rawset(_G, 'Auctionator', nil)")
+    ctx.eq(ext_state(c), (False, "noapi"), "Auctionator gone")
+    ctx.eq(cost(2771), (5 * 55 + 5 * 90, "ok", "search"), "without Auctionator the last check is used")
+    ctx.eq(cost(2772), (None, "none", "search"), "... also a 'not listed'")
+    check_clean(ctx, c)
+
+
+@scenario("upgrade_from_2026_11_1", "2026.11.2: saved data of 2026.11.1 (own scans, browse snapshot, scan switches): switches and snapshot go, checked prices and the watched Auctionator scan stay")
+def s_upgrade_11_1(ctx):
+    now = SERVER_TIME0
+    ids = ", ".join(str(i) for i in AUC_BACKGROUND_CRATE)
+    sv = ("""GetrichDB = { resultsFormat = 3, market = 'Classic Beta PvP 2|Horde', autoScan = true, useAuctionator = true, quickScan = true, quickTop = 5,
+      results = { [2770] = { status = 'listed', entries = { { 40, 10 }, { 80, 100 } }, min = 40, avail = 110, time = %d } },
+      scannedAt = { crates = %d, flips = %d },
+      browse = { full = %d, gear = %d, items = { [2770] = { min = 40, qty = 110, t = %d } } },
+      extScans = { ['Classic Beta PvP 2|Horde'] = { t = %d, ids = { %s } } } }""" % (now - 1800, now - 1800, now - 1800, now - 1800, now - 1800, now - 1800, now - 3600, ids))
+    c = ctx.client(sv=sv, login=False)
+    install_auctionator(c)
+    auctionator_update(c, {2770: 40, 2771: 55}, background=500000, fire=False)
+    c.login()
+    WC = c.WC
+    db = c.g("GetrichDB")
+    ctx.eq((db.autoScan, db.useAuctionator, db.quickScan, db.browse), (None, None, None, None), "switches and browse snapshot of 2026.11.1 are dropped")
+    ctx.eq(db.quickTop, 5, "quickTop kept")
+    ctx.eq(ext_state(c), (True, None), "Auctionator's prices in use")
+    ctx.eq(ext_info(c), (True, str(WC.L.EXT_AGO) % (str(WC.L.UI_AGE_MIN) % 60)), "the scan 2026.11.1 watched an hour ago is still dated")
+    cost, status, info = multi(WC.CostForAny(WC, 2770, 20), 3)
+    ctx.eq((fnum(cost), status, info and str(info.source)), (10 * 40 + 10 * 80, "ok", "search"), "the last scan of 2026.11.1 (newer than Auctionator's) is used as a checked price")
+    ctx.eq(multi(WC.CostForAny(WC, 2771, 20), 2), (1100, "est"), "an item it did not search: Auctionator's price")
+    c.open_ah()
+    c.advance(30)
+    ctx.check(not WC.Scanner.active and c.ah_stats()["searches"] == 0 and c.ah_stats()["browses"] == 0, "no scan starts when the Auction House opens")
+    for tab in TABS:
+        c.slash("/gr " + tab)
+        c.advance(0.3)
+    text = c.logout_sv()
+    for word in ("browse", "autoScan", "useAuctionator", "quickScan"):
+        ctx.check(word not in text, "the saved data still contains '%s'" % word)
+    check_clean(ctx, c)
 
 
 # ===================================================================================================================

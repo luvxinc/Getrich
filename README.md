@@ -2,50 +2,52 @@
 
 WoW Forever 挣钱助手。作者 **Aaron Tong**（联系：Luvx.inc@gmail.com）。
 
-打开拍卖行就能用，一个窗口六个页签：
+拍卖行价格全部来自 **Auctionator** 的全拍卖行扫描（必须安装）：Getrich 自己不再扫描，登录后不用开拍卖行就有数据。一个窗口六个页签：
 
 | 页签 | 做什么 |
 |---|---|
 | **箱子** | 全部 30 种 Waylaid Crate（学徒、熟练、专家、工匠），自动选最便宜的填法，按每个 Merchant's Favor 的成本排名 |
 | **Writ** | 150 种 Craftsman's Writ，Writ + 需求物品都从拍卖行买，按每点声望的成本排名 |
-| **倒卖** | 翻完整个拍卖行，找出一口价低于 NPC 收购价的挂单，买下卖店就赚 |
+| **倒卖** | Auctionator 扫到的、一口价低于 NPC 收购价的物品，买下卖店就赚 |
 | **制造** | **赚钱**：每个配方的材料成本（拍卖行或商人，取便宜的）对比卖 NPC、挂拍卖行、做了再分解三种卖法的利润，可以把训练师能学但还没学的配方也算进来。**冲技能**：每点技能的成本、从当前技能到目标的最省钱路线和购物清单 |
 | **分解** | 背包里的装备、拍卖行上的装备、你能做的装备：分解能出什么、值多少，比卖店多赚多少 |
-| **走势** | 扫描过的物品的价格曲线：24 小时 / 7 天 / 30 天 / 全部 |
+| **走势** | 价格曲线：24 小时 / 7 天 / 30 天 / 全部 |
 
 专业书里每个配方旁边显示利润；还没满级的专业会标出最省钱的 3 个冲技能配方。设置在
 **游戏菜单 → 选项 → 插件 → Getrich**（或 `/gr settings`）。
 
 A WoW Forever money-making addon by Aaron Tong: AH listings below the vendor price, crafting profit (vendor / AH /
-disenchant) and a cheapest skill-up route, disenchanting, price history, Waylaid Crates and Craftsman's Writs. One window
-docked to the Auction House, plus a settings page under Options → AddOns → Getrich.
+disenchant) and a cheapest skill-up route, disenchanting, price history, Waylaid Crates and Craftsman's Writs. Prices come
+from Auctionator's full scans (required), so everything is there right after login; a "Check the best" button searches the
+top entries of a tab exactly. One window docked to the Auction House, plus a settings page under Options → AddOns → Getrich.
 
 ## 怎么用
 
-1. 把 `Getrich` 文件夹放进 `World of Warcraft/_forever_/Interface/AddOns/`，游戏里 `/reload`。
+1. 装好 [Auctionator](https://www.curseforge.com/wow/addons/auctionator)，把 `Getrich` 文件夹放进 `World of Warcraft/_forever_/Interface/AddOns/`，重启游戏。
 2. **每个专业的窗口各打开一次**，插件会记下你学会的配方和当前技能（学新配方、技能涨了会自动更新）。
-3. 打开拍卖行，窗口自动贴在右边。选一个页签，点「扫描拍卖行」。开着自动扫描时，打开拍卖行会自动扫当前页；「倒卖」「分解」要翻完整个拍卖行，只在你点扫描时才扫。
-   **装了 Auctionator 插件会快很多**：它每做完一次全拍卖行扫描，箱子页和 Writ 页立刻有估算价（带「~」），再点扫描只需十几秒核实前几名（见下面「Auctionator 和快速扫描」）。
-4. 点任何物品名字，会填进拍卖行搜索栏直接搜索；鼠标悬停看全部明细（材料清单、商人位置、分解概率、冲技能路线）。
+3. 在拍卖行里用 **Auctionator 做一次全扫描**。扫完聊天框提示一次，六个页签立刻有数据。以后想要新行情，就再用 Auctionator 扫一次；Getrich 不需要任何操作。
+4. Auctionator 的数据存在它自己的存档里，**下线再上线都在**：登录后 `/gr` 就能看，不用开拍卖行，也不用重新扫描。窗口底部写着这份价格是什么时候的。
+5. 数字前带「~」的是估算（只知道最低价）。要精确的数，开着拍卖行点 **「核实前几名」**：只搜索当前页排在最前面的几项，十几秒（见下面「价格从哪来」）。
+6. 点任何物品名字，会填进拍卖行搜索栏直接搜索；鼠标悬停看全部明细（材料清单、商人位置、分解概率、冲技能路线）。
 
 | 命令 | 作用 |
 |---|---|
 | `/gr` | 打开或关闭窗口（`/getrich`、旧的 `/wc` 也可以） |
 | `/gr <页签>` | 打开某个页签：`crates` `writs` `flips` `craft` `de` `history` |
-| `/gr scan [页签]` | 扫描当前页签（或指定页签） |
-| `/gr stop` | 停止扫描 |
+| `/gr check [页签]` | 核实当前页签（或指定页签）的前几名，要开着拍卖行（旧的 `/gr scan` 也可以） |
+| `/gr stop` | 停止核实 |
 | `/gr settings` | 打开设置页 |
-| `/gr auc` | Auctionator 的价格现在有没有在用，没用的话是什么原因 |
+| `/gr auc` | 价格来自 Auctionator 哪一次扫描；没有价格的话是什么原因 |
 | `/gr errors` | 显示插件记录到的错误（出问题时发给作者） |
 | `/gr help` | 命令列表 |
 
 ## 算法
 
-- **拍卖行价格**：从最便宜的挂单开始，买够需要的数量来算（不是只看最低价）。你自己挂的不算。
+- **拍卖行价格**：核实过的物品，从最便宜的挂单开始买够需要的数量来算（不是只看最低价），你自己挂的不算。没核实的物品用 Auctionator 记录的最低价 × 数量，数字前带「~」。
 - **商人价格**：插件内置 Forever 客户端里的商人售价和每组数量；你打开商人窗口时会记下你实际看到的价格（含声望、讲价折扣、限量库存）。卖完或库存不够的限量商品不当作货源。
 - **卖 NPC 价格**：直接读游戏接口。商人不收的物品不算这条路。
 - **挂拍卖行**：最低一口价 × 产量，扣拍卖行手续费：本阵营拍卖行 5%，中立拍卖行 15%（客户端 AuctionHouse 表）。
-- **每个拍卖行的价格分开存**：正式服每个规则集、每个阵营各有一个拍卖行，中立拍卖行另算。价格和走势按「规则集 + 阵营」分开记录（规则集读游戏规则接口；`GetRealmName()` 在正式服只是内部分服名，同一规则集的分服共用拍卖行），换角色或在中立拍卖行扫描不会互相覆盖。
+- **每个拍卖行分开**：正式服每个规则集、每个阵营各有一个拍卖行，中立拍卖行另算。核实结果和走势按「规则集 + 阵营」分开记录（规则集读游戏规则接口；`GetRealmName()` 在正式服只是内部分服名，同一规则集的分服共用拍卖行）。Auctionator 的数据库不分阵营，所以 Getrich 记着它看到的那次全扫描是在哪个拍卖行：换到另一个拍卖行时不会拿别处的价格来用，要在这里再扫一次。
 - **箱子奖励**：学徒 / 熟练 / 专家每箱 5 / 10 / 15 Favor（白色，原材料）和 10 / 20 / 30（绿色，成品），来自 Wowhead 的任务数据。工匠箱子的奖励目前没有任何公开来源，先按 20 / 40 估算并在界面上标「?」；你每次交箱，插件都会记下游戏实际给的 Favor 和金币，记到之后就用实际数值。
 - **背包里已有的材料**：按当前市价算成本；悬停另外显示「还需要花多少钱」。
 - **分解**：Forever 客户端的分解等级段 + 怀旧服概率，标为「估算」。已按 Wowhead 的正式服分解数据核对过主要产物：只有 21–30 物品等级的绿色武器和怀旧服不同（出 Greater Magic Essence），已改。你每次分解，插件会记下实际结果，同一等级段满 20 次（可在设置里改）后改用实测概率，标为「实测」。
@@ -55,28 +57,53 @@ docked to the Auction House, plus a settings page under Options → AddOns → G
 - **没有价格不当 0**：缺价的显示「—」并说明缺哪一样，不会被当成免费或零利润。
 - **不藏结果**：默认只隐藏已经被买走的倒卖；其他筛选都要你手动打开，隐藏了多少会显示出来。
 
-## Auctionator 和快速扫描
+## 价格从哪来
 
-箱子页要搜 126 个物品（约 2 分钟），Writ 页最多 300 个（约 4 分钟）。装了 Auctionator 时：
+Getrich 只用 Auctionator 公开给其他插件的接口（`Auctionator.API.v1`）：某个物品的最低价、它是几天前见到的、数据库更新通知。不读它的其他数据。
 
-1. 在 Auctionator 里做一次全拍卖行扫描（Getrich 要已经加载）。扫完聊天框会提示，箱子页和 Writ 页立刻按它记录的最低价排好名，数字前带「~」。
-2. 点 Getrich 的扫描：只精确搜索排在最前面的 5 项（设置里可改成 3 / 10 / 20），最多三轮，因为精确价格可能改变排名。核实过的行不再带「~」。
-3. 这份估算用 12 小时。之后，或者 Auctionator 又在对立阵营 / 中立拍卖行扫描过（它的数据库不分阵营），Getrich 自动回到全扫，直到 Auctionator 在这个拍卖行再扫一次。
+**这个接口能给的，和给不了的：**
 
-要点：
+| 接口不提供 | Getrich 的做法 |
+|---|---|
+| 物品还有没有人卖（卖光的物品，旧价格还留着） | 先找出 Auctionator 最近一次全扫描是哪一天；那天或之后见过的物品才算在售，其余按「没人卖」 |
+| 最低价那一档有多少个 | 最低价 × 数量只是下限，标「~」；「核实前几名」精确搜索 |
+| 最低价是不是你自己挂的 | 核实时会排除你自己的挂单 |
+| 价格的具体时间（只有「几天前」） | 拍卖行开着时 Getrich 每 5 秒看一眼 Auctionator 的价格；一大批箱子和 Writ 物品同时变化就是一次全扫描，记下时间和所在拍卖行。看到过的扫描精确到分钟（「25 分钟前」），没看到的（装 Getrich 之前扫的）只显示「今天 / 昨天 / N 天前」 |
+| 哪些物品在售（只能按物品 ID 一个一个问） | 插件内置一张物品表（客户端里所有能交易、商人收购或能分解的 7,197 个物品），倒卖页和分解页照这张表去问 |
 
-- 只用 Auctionator 公开给其他插件的接口（`Auctionator.API.v1`：价格、几天前见过、数据库更新通知），不读它的其他数据。接口不提供价格的具体时间和所属拍卖行，所以 Getrich 只认它亲眼看到完成的全扫描；单个物品的搜索、购物清单不算。
-- 「~」的含义：只知道最低价，不知道那个价位有多少个，整组购买可能更贵；最低价也可能是你自己挂的。那次扫描没看到的物品按「没人卖」。
-- Getrich 自己搜到的精确价格优先；较新的 Auctionator 扫描只有在最低价不同时才会替换它。
-- 只影响箱子页和 Writ 页。倒卖、制造、分解、走势仍然只用 Getrich 自己的数据。
-- `/gr auc` 随时查看状态。设置里可以关掉估算或快速扫描，关掉后和以前完全一样。
+**「核实前几名」做什么：**
+
+| 页签 | 精确搜索的内容 |
+|---|---|
+| 箱子 / Writ | 排在最前面的 5 项（设置里可选 3 / 5 / 10 / 20）用到的全部物品。精确价格会改变排名，新进前列的接着查，直到前几名全部是精确价 |
+| 倒卖 | 赚得最多的 80 个候选（设置里可选 40 / 80 / 150）：到底有几个低于商店价 |
+| 制造 | 赚钱模式：最赚钱的 5 个配方要从拍卖行买的材料和它们的产物。冲技能模式：当前路线的购物清单和产物 |
+| 分解 | 全部附魔材料（24 种） |
+| 走势 | 你关注（星标）的物品 |
+
+**为什么还要核实**（作者 2026-11-15 的真实数据）：
+
+- 拿 Getrich 当时精确搜到的 126 个箱子物品的挂单明细算：96 种箱子材料组合里，「最低价 × 数量」和真实成本完全一致的 86 种，差 3% 以内的 7 种，差得多的 3 种（1.3 倍、4.5 倍、5.75 倍）。差得最多的是 20 个 Strange Dust：最便宜的一档只挂了 1 个（20 铜），按最低价算 4 银，实际要 23 银；只看最低价的话，这只箱子会排到第一名（每 Favor 58 铜），真正的第一名是每 Favor 1 银 45 铜的另一只。
+- 用 Auctionator 同一天另一时刻的价格做估算、上面的挂单明细当作拍卖行回放：核实前 5 名搜 22 个物品、约 15 秒；最便宜的箱子和前四名与把 126 个物品全部精确搜索一遍（约 109 秒）的结果一致。真实的第 5 名因为两份数据之间价格变了、估算偏高，排在第 6 没被核实（它和核实出来的第 5 名每 Favor 只差 1 铜）。核实前 10 名（54 个物品、约 37 秒）时前六名全部一致。
+- Writ 没有同期的挂单明细可比，按模拟的挂单深度：核实前 5 名 10 个物品约 7 秒，全部精确搜索 300 个物品约 219 秒。
+
+**哪个价格优先：**
+
+- 核实比 Auctionator 的扫描新：用核实的挂单明细。
+- 扫描比核实新：最低价没变、而且核实是 24 小时以内的，继续用挂单明细；否则改用 Auctionator 的最低价（带「~」）。
+- 没装 Auctionator、或它还没做过全扫描：窗口底部和聊天框会说明缺什么（每次登录提示一次），`/gr auc` 随时查看。
+
+**局限：**
+
+- Auctionator 按「天」记录。同一天里先扫到、后来卖光的物品，在下一次全扫描之前仍按有货算；核实时会发现并跳到下一名。Auctionator 的数据越旧，核实要查的轮数越多，先用 Auctionator 重扫一次更快。
+- 核实范围之外的行都是 Auctionator 扫描那一刻的行情：之后变便宜的东西，要等 Auctionator 再扫一次才会排上来。
+- 带随机后缀的装备（「of the Bear」）在 Auctionator 里按物品 ID 合并成一个最低价；精确搜索不带后缀，搜不到时保留估算。
 
 ## 价格记录
 
-- 每次扫描都会存：同一小时内再扫，覆盖这一小时的记录；下一小时新增一条。
+- Auctionator 每完成一次全扫描（Getrich 已加载、拍卖行开着），相关物品各记一个点（只有最低价）；核实过的物品另外记下最低价和挂单数量。同一小时内覆盖，下一小时新增一条。
 - 只记相关物品：箱子和 Writ 用到的、你所有角色配方的材料和产物、分解材料、你关注（星标）的物品。
-- 只记 Getrich 自己搜到的价格。快速扫描时，只有被精确搜索的那几项会新增记录；Auctionator 的估算不进走势。
-- 小时记录默认保留 30 天，更早的压成每天一条（最低 / 平均 / 最高）；超过 14 天的挂单明细会自动清掉（曲线不受影响）。两个天数都能在设置里改。
+- 小时记录默认保留 30 天，更早的压成每天一条（最低 / 平均 / 最高）；超过 14 天的核实结果会自动清掉（曲线不受影响）。两个天数都能在设置里改。
 
 ## 数据来源
 
@@ -89,7 +116,8 @@ docked to the Auction House, plus a settings page under Options → AddOns → G
 | Wowhead（WoW Forever 数据库，2026-11-15 按正式服重新核对） | 箱子材料（物品提示）、每箱 Favor、150 张 Writ 的需求物品、数量和声望、送货单价格、Crate Return 和 Shipping Label 的声望 |
 | wow-professions.com、leprestore.com、forever-codex.com、mmoherald.com | 交箱银币（Wowhead 没有这项，以游戏里实际记录为准）、送货单需要友善 |
 | [warcraft.wiki.gg Patch 1.60.1/API changes](https://warcraft.wiki.gg/wiki/Patch_1.60.1/API_changes) | 规则集的读法（`C_GameRules.IsGameRuleActive` + `Enum.GameRule.HardcoreRuleset / RPRuleset / PvPRuleset`） |
-| Auctionator 的插件接口 `Auctionator.API.v1`（运行时调用，可选） | 箱子页和 Writ 页的估算价 |
+| WoW Forever 客户端数据表 ItemSparse + Item（同一 build） | 内置物品表 `DataItems.lua`：7,197 个可交易物品的商店收购价，其中 1,192 件可分解装备的品质、类别和物品等级 |
+| Auctionator 的插件接口 `Auctionator.API.v1`（运行时调用，必需） | 全部拍卖行价格 |
 
 数据表用 `tools/gen_data.py` 生成，见 [tools/README.md](tools/README.md)。手写的数据（箱子、Writ、手续费等）用
 `tools/verify_game_data.py` 对照客户端数据表和 Wowhead 核对，游戏更新后跑一遍就知道哪里变了。
@@ -98,13 +126,15 @@ docked to the Auction House, plus a settings page under Options → AddOns → G
 
 ```
 pip install lupa
-python3 tests/test_merge.py [--locale zhCN|zhTW] [--uncached]   # 场景测试：扫描、计价、冲技能、分解、记录、设置、界面、旧版回归
-python3 tests/mock_test.py Getrich zhCN full                     # 箱子 / Writ（1.3.0 原有测试）
+python3 tests/test_merge.py [--locale zhCN|zhTW] [--uncached]   # 场景测试：Auctionator 价格、核实、计价、冲技能、分解、记录、设置、界面、旧版回归
+python3 tests/mock_test.py Getrich zhCN full                     # 箱子 / Writ 的计价（1.3.0 原有测试）+ 2026.11.2 的流程，另一套独立的模拟客户端
+python3 tools/gen_data.py --check --out Getrich                  # 检查内置数据表
 python3 tools/verify_game_data.py --db cache/1.60.1.70938 --download --wowhead   # 手写数据对照正式服
 ```
 
 `tests/wowmock.py` 是模拟的 WoW Forever 客户端（按 Blizzard 1.60.1.70938 的界面源码核对过接口），
-不存在的接口一调用就报错。测试用的价格和配方来自真实游戏存档（角色 ID 已匿名）。
+不存在的接口一调用就报错。测试用的价格和配方来自真实游戏存档（角色 ID 已匿名）。测试里的 Auctionator 是一个只实现
+`Auctionator.API.v1` 三个函数的替身，不包含 Auctionator 的任何代码。
 
 ## 版本
 

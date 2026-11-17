@@ -366,25 +366,16 @@ SafeRegister("CURRENCY_DISPLAY_UPDATE")
 
 WC.AddLocale({
   enUS = {
-    CORE_AUTO_SKIPPED = "This tab reads the whole Auction House (1-4 minutes), so it doesn't scan automatically. Click \"Scan Auction House\" when you want it.",
     CORE_NO_ERRORS = "No errors recorded.",
     CORE_NEUTRAL_AH = "Neutral Auction House: its prices are kept apart from your faction's, and sales are costed with the 15% cut.",
-    IDLE_LAST_MANUAL = "Last scan %s · prices may have changed · click \"Scan Auction House\" to refresh",
-    IDLE_NEVER_MANUAL = "Not scanned yet · click \"Scan Auction House\" (with the Auction House open)",
   },
   zhCN = {
-    CORE_AUTO_SKIPPED = "这一页要翻完整个拍卖行（1-4 分钟），不会自动扫描。需要时点『扫描拍卖行』。",
     CORE_NO_ERRORS = "没有记录到错误。",
     CORE_NEUTRAL_AH = "当前是中立拍卖行：价格和本阵营拍卖行分开记录，卖出手续费按 15% 计算。",
-    IDLE_LAST_MANUAL = "上次扫描 %s · 价格可能已经变了 · 点『扫描拍卖行』更新",
-    IDLE_NEVER_MANUAL = "还没扫描过 · 打开拍卖行后点『扫描拍卖行』",
   },
   zhTW = {
-    CORE_AUTO_SKIPPED = "這一頁要翻完整個拍賣場（1-4 分鐘），不會自動掃描。需要時點『掃描拍賣場』。",
     CORE_NO_ERRORS = "沒有記錄到錯誤。",
     CORE_NEUTRAL_AH = "目前是中立拍賣場：價格和本陣營拍賣場分開記錄，賣出手續費按 15% 計算。",
-    IDLE_LAST_MANUAL = "上次掃描 %s · 價格可能已經變了 · 點『掃描拍賣場』更新",
-    IDLE_NEVER_MANUAL = "還沒掃描過 · 打開拍賣場後點『掃描拍賣場』",
   },
 })
 
@@ -444,20 +435,7 @@ frame:SetScript("OnEvent", function(_, event, ...)
     local neutral = AtNeutralAuctionHouse()
     UseMarket(neutral)
     if neutral then WC:Print(WC.L.CORE_NEUTRAL_AH) end
-    WC.UI:ShowAtAuctionHouse()
-    if WC:DB().autoScan then
-      C_Timer.After(1.0, function()
-        if not (WC.ahOpen and WC.Scanner and not WC.Scanner.active) then return end
-        -- Flips / Disenchant read the whole AH page by page (1-4 minutes) and that replaces Blizzard's
-        -- own browse list, so they only run when the player asks for them.
-        local kind = WC.UI.ScanKindFor and WC.UI:ScanKindFor(WC:Tab()) or WC:Tab()
-        if kind == "flips" or kind == "de" then
-          WC:Print(WC.L.CORE_AUTO_SKIPPED)
-          return
-        end
-        WC.UI:StartScan(WC:Tab())
-      end)
-    end
+    WC.UI:ShowAtAuctionHouse()      -- nothing is searched until the player presses the check button
   elseif event == "AUCTION_HOUSE_CLOSED" then
     WC.ahOpen = false
     if WC.Scanner then WC.Scanner:Stop(WC.L.STOP_AH_CLOSED) end
@@ -478,9 +456,11 @@ end)
 -- ---------------------------------------------------------------------------
 -- slash commands: /gr  /getrich  (and /wc, the old Waylaid Crate command)
 --   /gr            open / close
---   /gr scan       scan the open tab          /gr scan <tab>   open that tab and scan it
---   /gr stop       stop the scan              /gr <tab>        open that tab
+--   /gr check      check the best entries of the open tab (exact searches); /gr check <tab> opens that tab first
+--                  (/gr scan is the same: the name until 2026.11.1)
+--   /gr stop       stop the check             /gr <tab>        open that tab
 --   /gr settings   the Settings page (also /gr config, /gr options)
+--   /gr auc        where the prices are from (Auctionator's last full scan), or what is missing
 --   /gr errors     list errors caught inside the addon
 -- tabs: crates writs flips craft de history (only the ones that are loaded)
 
@@ -507,7 +487,7 @@ SlashCmdList.GETRICH = function(msg)
   local UI = WC.UI
   if cmd == "" then
     UI:Toggle()
-  elseif cmd == "scan" then
+  elseif cmd == "check" or cmd == "scan" then
     local key = WC:Tab()
     if arg ~= "" then
       key = ResolveTab(arg)

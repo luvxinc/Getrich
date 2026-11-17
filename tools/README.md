@@ -1,12 +1,13 @@
 # tools/gen_data.py
 
-Generates the three data files of the addon. Never edit them by hand; re-run the generator.
+Generates the four data files of the addon. Never edit them by hand; re-run the generator.
 
 | Output | Contents |
 |---|---|
 | `Getrich/DataVendor.lua` | `WC.VENDOR[itemID] = { buy, stack, npcs, seen, classic }`: items NPC vendors sell for gold with unlimited stock |
 | `Getrich/DataDisenchant.lua` | `WC.DE = { spell, bands, noDE, mats }`: disenchant bands with estimated outputs |
 | `Getrich/DataRecipes.lua` | `WC.RECIPES[skillLine][recipeID]` (thresholds, output, reagents, how it is learned) and `WC.SKILLUP` (skill-up chance rule) |
+| `Getrich/DataItems.lua` | `WC.ITEMS_PACKED`: every tradeable item a vendor buys or that can be disenchanted, with its vendor price and (gear) quality, class and item level. Decoded by `WC.ItemTable()` in `Util.lua` |
 
 Python 3.8+ with the standard library only. `--check` also needs `lupa` (`pip install lupa`).
 
@@ -30,10 +31,14 @@ python3 tools/gen_data.py --download --db cache/1.60.1.70532 --build 1.60.1.7053
 | `--date D` | date written into the headers (default today); pass it to reproduce a file byte for byte |
 | `--max-skill N` | vendor data: reagents of recipes up to this yellow skill; recipes: learn skill up to N (default 300) |
 | `--per-side N` | at most N Classic NPCs per faction for an item (default 3) |
-| `--check` | load the three files in Lua 5.1 and verify them (see below) |
+| `--check` | load the files in Lua 5.1 and verify them (see below) |
 
 `--check` alone only checks the files. With `--db` it generates first, so pass every input you used, or the
 vendor file loses its Classic part.
+
+`DataItems.lua` (2026-11-16, new in 2026.11.2) was made from client build 1.60.1.70938. It needs only `--db`, so it
+can be regenerated on its own into a scratch folder (`--out`) and copied; a fresh run gives the same file byte for byte
+with `--date 2026-11-16`.
 
 The 2026-11-15 files (`DataRecipes.lua`, `DataDisenchant.lua`) were made from client build 1.60.1.70938, the live game:
 - Against 1.60.1.70450: 1 new recipe (Enchant Boots - Speed), 26 recipes with new skill thresholds, 5 bag recipes that
@@ -57,6 +62,9 @@ The `--check` run verifies:
 - Recipe outputs and recipe items exist in ItemSparse.
 - Spot checks on known items and recipes.
 - Every recipe captured in game matches `WC.RECIPES` in reagents and yield.
+- `DataItems.lua`: item IDs strictly increasing, every row has a vendor price or gear data, spot checks (Copper Ore
+  5c, Linen Cloth 13c, Mighty Chain Pants armor level 23, Scarlet Dagger weapon level 10); with `--db`, every row
+  equals what ItemSparse / Item give.
 
 ## How the data is chosen
 
@@ -75,6 +83,18 @@ unlimited stock (pfQuest `V` stock 0) are added with `classic = true`:
   cities come first.
 - These NPCs are left out: NPCs with no spawn point, Winter Veil-only vendors, and NPCs the user scanned
   (the scan decides).
+
+**Item table.** Since 2026.11.2 the Auction House prices come from Auctionator, whose add-on API answers for one
+item ID at a time and cannot list what is for sale. The Flips and Disenchant tabs need such a list, so the addon
+carries the item IDs worth asking about:
+- Tradeable items only: ItemSparse `Bonding` 0 (none), 2 (on equip) or 3 (on use). Bind-on-pickup and quest items
+  cannot be on the Auction House.
+- Items a vendor buys (`SellPrice` > 0): 7,080. The Flips tab compares Auctionator's cheapest price with this price
+  (and with the client's own sell price once the client has the item).
+- Weapons and armor of uncommon, rare or epic quality that can be disenchanted (not in `noDE`, an equip slot that
+  disenchants): 1,192, with quality, class and item level, so a disenchant band is known without loading the item.
+- 7,197 rows in all (most gear is in both groups). One string, a record per item:
+  `<id - previous id>,<sell copper>[,<quality><w|a><item level>]`, 50 KB in the file and about 0.6 MB once decoded.
 
 **Disenchanting.**
 - Bands (quality, class, item-level range) come from the Forever `ItemDisenchantLoot` table.

@@ -79,6 +79,40 @@ function WC.RequestItem(itemID)
   if itemID and C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, itemID) end
 end
 
+-- The built-in item table (DataItems.lua): every tradeable item a vendor buys or that can be disenchanted, known
+-- without loading the item. Decoded on first use.
+--   ids  = { itemID, ... } sorted
+--   sell = { [itemID] = vendor sell price in copper } (0 = vendors don't buy it)
+--   gear = { [itemID] = { quality, classID (2 weapon / 4 armor), itemLevel } }
+local itemIDs, itemSell, itemGear
+function WC.ItemTable()
+  if itemIDs then return itemIDs, itemSell, itemGear end
+  itemIDs, itemSell, itemGear = {}, {}, {}
+  local packed = WC.ITEMS_PACKED
+  if type(packed) == "string" then
+    local id, n = 0, 0
+    for d, sell, g in packed:gmatch("(%d+),(%d+),?([^;]*)") do
+      id = id + tonumber(d)
+      n = n + 1
+      itemIDs[n] = id
+      itemSell[id] = tonumber(sell)
+      if g ~= "" then
+        itemGear[id] = { tonumber(g:sub(1, 1)), (g:sub(2, 2) == "w") and 2 or 4, tonumber(g:sub(3)) }
+      end
+    end
+    WC.ITEMS_PACKED = nil
+  end
+  return itemIDs, itemSell, itemGear
+end
+
+-- quality, classID, itemLevel of a piece of gear from the built-in table (nil: not disenchantable gear)
+function WC.StaticGear(itemID)
+  local _, _, gear = WC.ItemTable()
+  local g = gear[itemID]
+  if g then return g[1], g[2], g[3] end
+  return nil
+end
+
 -- items currently in the bags (bank not included)
 function WC.BagCount(itemID)
   local fn = (C_Item and C_Item.GetItemCount) or _G.GetItemCount

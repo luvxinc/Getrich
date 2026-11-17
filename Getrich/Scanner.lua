@@ -1,13 +1,17 @@
 local addonName, WC = ...
 
--- Auction House scanner.
+-- Exact searches of single items ("check"). Since 2026.11.2 Getrich does not scan the Auction House: prices come
+-- from Auctionator (External.lua). What is left here is the part that asks the Auction House about a handful of
+-- items when the player presses a tab's check button, to get what Auctionator cannot give: the order book (how
+-- many are listed at which price), without the player's own auctions.
 --
--- A scan "kind" is an ordered list of phases. Each phase is evaluated only when it is reached, so a later
--- phase can depend on what an earlier one found (writs: requested items of the writs for sale).
---   search phase: one C_AuctionHouse.SendSearchQuery per item. Blizzard: "restricted to 100 calls per minute",
---                 so queries are paced 0.7 s apart and only sent when IsThrottledMessageSystemReady().
---   browse phase: C_AuctionHouse.SendBrowseQuery, then RequestMoreBrowseResults() until HasFullBrowseResults().
--- Every answer is recorded the moment it arrives (prices + history), so a stopped scan keeps what it got.
+-- A "kind" (one per tab) is an ordered list of phases; each phase is a list of items, evaluated only when it is
+-- reached, so it can depend on what was found before. A phase marked `again` is run again ("round 2, 3, ...") as
+-- long as its list has something that was not searched yet (crates: exact prices change which crates are the
+-- best, and those are checked next, until the best ones are all exact). An item is searched once per check.
+--   one C_AuctionHouse.SendSearchQuery per item. Blizzard: "restricted to 100 calls per minute", so queries are
+--   paced 0.7 s apart and only sent when IsThrottledMessageSystemReady().
+-- Every answer is recorded the moment it arrives (prices + history), so a stopped check keeps what it got.
 -- The scanner never stops itself because of an event; it only reacts to answers for what it is waiting on.
 --
 -- API facts are from the Blizzard UI source for this client (github.com/Gethe/wow-ui-source, branch "forever",
@@ -19,71 +23,50 @@ local addonName, WC = ...
 WC.AddLocale({
   enUS = {
     SCAN_OPEN_AH_FIRST = "Open the Auction House first.",
-    SCAN_NO_API = "This client has no Auction House search API, so it can't scan.",
-    SCAN_UNKNOWN_KIND = "There is nothing to scan for this tab.",
-    SCAN_PAGE_FMT = "page %d · %d items",
+    SCAN_NO_API = "This client has no Auction House search API, so nothing can be checked.",
+    SCAN_UNKNOWN_KIND = "There is nothing to check on this tab.",
+    SCAN_NOTHING = "Nothing to check here yet.",
     SCAN_KIND_CRATES = "crates",
     SCAN_KIND_WRITS = "writs",
     SCAN_KIND_FLIPS = "vendor flips",
     SCAN_KIND_DE = "disenchanting",
     SCAN_KIND_HISTORY = "watched items",
-    SCAN_PH_CRATES = "crates and materials",
-    SCAN_PH_WRITS = "Craftsman's Writs",
-    SCAN_PH_WRIT_ITEMS = "requested items",
-    SCAN_PH_QUICK = "checking the best %d",
-    SCAN_PH_BROWSE_ALL = "all listings",
-    SCAN_PH_FLIP_CHECK = "checking cheap listings",
+    SCAN_PH_QUICK = "the best %d",
+    SCAN_PH_FLIP_CHECK = "cheap listings",
     SCAN_PH_DE_MATS = "enchanting materials",
-    SCAN_PH_DE_GEAR = "green, blue and purple gear",
     SCAN_PH_WATCHED = "watched items",
-    SCAN_PH_WAIT_ITEMS = "loading item data",
-    SCAN_WAIT_ITEMS_FMT = "loading item data · %d left",
     HIST_NOTHING_WATCHED = "No watched items yet. Mark items with |A:auctionhouse-icon-favorite:12:12|a on the Prices tab first.",
   },
   zhCN = {
     SCAN_OPEN_AH_FIRST = "请先打开拍卖行。",
-    SCAN_NO_API = "这个客户端没有拍卖行搜索接口，无法扫描。",
-    SCAN_UNKNOWN_KIND = "这一页没有可扫描的内容。",
-    SCAN_PAGE_FMT = "第 %d 页 · %d 种物品",
+    SCAN_NO_API = "这个客户端没有拍卖行搜索接口，无法核实价格。",
+    SCAN_UNKNOWN_KIND = "这一页没有可核实的内容。",
+    SCAN_NOTHING = "这里还没有可核实的条目。",
     SCAN_KIND_CRATES = "箱子",
     SCAN_KIND_WRITS = "Writ",
     SCAN_KIND_FLIPS = "倒卖",
     SCAN_KIND_DE = "附魔分解",
     SCAN_KIND_HISTORY = "关注物品",
-    SCAN_PH_CRATES = "箱子和材料",
-    SCAN_PH_WRITS = "Craftsman's Writ",
-    SCAN_PH_WRIT_ITEMS = "需求物品",
-    SCAN_PH_QUICK = "核实排在前面的 %d 项",
-    SCAN_PH_BROWSE_ALL = "全部拍卖",
-    SCAN_PH_FLIP_CHECK = "核对低价物品",
+    SCAN_PH_QUICK = "排在前面的 %d 项",
+    SCAN_PH_FLIP_CHECK = "低价物品",
     SCAN_PH_DE_MATS = "附魔材料",
-    SCAN_PH_DE_GEAR = "绿色、蓝色和紫色装备",
     SCAN_PH_WATCHED = "关注物品",
-    SCAN_PH_WAIT_ITEMS = "读取物品信息",
-    SCAN_WAIT_ITEMS_FMT = "读取物品信息 · 还剩 %d 个",
     HIST_NOTHING_WATCHED = "还没有关注的物品。请先在“走势”页用 |A:auctionhouse-icon-favorite:12:12|a 标记物品。",
   },
   zhTW = {
     SCAN_OPEN_AH_FIRST = "請先打開拍賣場。",
-    SCAN_NO_API = "這個用戶端沒有拍賣場搜尋介面，無法掃描。",
-    SCAN_UNKNOWN_KIND = "這一頁沒有可掃描的內容。",
-    SCAN_PAGE_FMT = "第 %d 頁 · %d 種物品",
+    SCAN_NO_API = "這個用戶端沒有拍賣場搜尋介面，無法核實價格。",
+    SCAN_UNKNOWN_KIND = "這一頁沒有可核實的內容。",
+    SCAN_NOTHING = "這裡還沒有可核實的條目。",
     SCAN_KIND_CRATES = "箱子",
     SCAN_KIND_WRITS = "Writ",
     SCAN_KIND_FLIPS = "倒賣",
     SCAN_KIND_DE = "附魔分解",
     SCAN_KIND_HISTORY = "關注物品",
-    SCAN_PH_CRATES = "箱子和材料",
-    SCAN_PH_WRITS = "Craftsman's Writ",
-    SCAN_PH_WRIT_ITEMS = "需求物品",
-    SCAN_PH_QUICK = "核實排在前面的 %d 項",
-    SCAN_PH_BROWSE_ALL = "全部拍賣",
-    SCAN_PH_FLIP_CHECK = "核對低價物品",
+    SCAN_PH_QUICK = "排在前面的 %d 項",
+    SCAN_PH_FLIP_CHECK = "低價物品",
     SCAN_PH_DE_MATS = "附魔材料",
-    SCAN_PH_DE_GEAR = "綠色、藍色和紫色裝備",
     SCAN_PH_WATCHED = "關注物品",
-    SCAN_PH_WAIT_ITEMS = "讀取物品資訊",
-    SCAN_WAIT_ITEMS_FMT = "讀取物品資訊 · 還剩 %d 個",
     HIST_NOTHING_WATCHED = "還沒有關注的物品。請先在「走勢」頁用 |A:auctionhouse-icon-favorite:12:12|a 標記物品。",
   },
 })
@@ -91,7 +74,7 @@ WC.AddLocale({
 -- Blizzard_Professions/Blizzard_ProfessionsCrafterOrderPage.lua:105); the ★ glyph may not exist in the enUS font.
 local L = WC.L
 
--- how many below-vendor-price items the flips scan checks with a targeted search (Settings: 40 / 80 / 150)
+-- how many below-vendor-price items the Flips check searches (Settings: 40 / 80 / 150)
 if WC.Store and WC.Store.Default then WC.Store:Default("flipCandidates", 80) end
 
 local Scanner = {
@@ -114,14 +97,9 @@ local CACHE_WAIT       = 3     -- seconds to wait for the item to enter the clie
 local KEEP_QTY         = 250   -- keep listings until this many items are covered (largest need is 200)
 local KEEP_ROWS        = 40
 local THROTTLE_POLL    = 0.25  -- re-check IsThrottledMessageSystemReady this often while it says no
-local BROWSE_TIMEOUT   = 10    -- seconds to wait for a browse page
-local BROWSE_MAX_PAGES = 60
-local BROWSE_MAX_TIME  = 240   -- seconds per browse phase
 local FIRE_INTERVAL    = 0.25  -- PRICES_UPDATED at most 4 times a second
 local ITEM_MORE_PAGES  = 4     -- extra result pages per non-commodity item (RequestMoreItemSearchResults)
-local WAIT_POLL        = 0.5   -- wait phases re-check this often
 
-local AH_FILTER = (Enum and Enum.AuctionHouseFilter) or {}   -- AHE:70-91
 local ITEM_CLASS = (Enum and Enum.ItemClass) or {}           -- ItemConstantsDocumentation.lua:269 (Weapon 2, Armor 4)
 local SORT = (Enum and Enum.AuctionHouseSortOrder) or {}     -- AHE:122-135 (Price 0, Name 1, Bid 3, Buyout 4)
 
@@ -134,39 +112,6 @@ end
 -- (AHUI/Shared/Blizzard_AuctionHouseFrame.lua:200-202, used by QueryItem via GetSortTypes, :737-752).
 local function ItemSorts()
   return { { sortOrder = SORT.Buyout or 4, reverseSort = false }, { sortOrder = SORT.Bid or 3, reverseSort = false } }
-end
-
--- Blizzard's default sort for every browse context: Price, then Name, both ascending
--- (AHUI/Shared/Blizzard_AuctionHouseFrame.lua:197-199; at most 2 sorts, :141).
-local function BrowseSorts()
-  return { { sortOrder = SORT.Price or 0, reverseSort = false }, { sortOrder = SORT.Name or 1, reverseSort = false } }
-end
-
--- The query Blizzard sends when you press Search with an empty box and default filters:
--- SearchBar:StartSearch (AHUI/Shared/Blizzard_AuctionHouseSearchBar.lua:203-207) -> AuctionHouseFrame:SendBrowseQuery
--- -> SendBrowseQueryInternal (AHUI/Shared/Blizzard_AuctionHouseFrame.lua:794-823). Defaults: level range 0-0
--- (SearchBar.lua:3-7); filters = the filters that are on by default, i.e. the 7 quality filters
--- (AHUI/Mainline/Blizzard_AuctionHouseUtil.lua:21-33, turned into an array by CalculateFiltersArray, SearchBar.lua:98-106);
--- itemClassFilters = nil when no category is selected (AHUI/Shared/Blizzard_AuctionHouseCategoriesList.lua:180-187).
--- Query struct: AuctionHouseBrowseQuery {searchString, sorts, minLevel?, maxLevel?, filters?, itemClassFilters?} (AHD:1539).
-function Scanner.FullBrowseQuery()
-  return {
-    searchString = "", minLevel = 0, maxLevel = 0, sorts = BrowseSorts(),
-    filters = { AH_FILTER.PoorQuality or 6, AH_FILTER.CommonQuality or 7, AH_FILTER.UncommonQuality or 8,
-                AH_FILTER.RareQuality or 9, AH_FILTER.EpicQuality or 10, AH_FILTER.LegendaryQuality or 11,
-                AH_FILTER.ArtifactQuality or 12 },
-  }
-end
-
--- Gear that can be disenchanted: uncommon / rare / epic quality filters, weapons + armor.
--- AuctionHouseItemClassFilter = {classID, subClassID?, inventoryType?} (AHD:1561); a class-only filter is what
--- Blizzard itself uses for the Quest Items / Miscellaneous categories (AHUI/Camelot/Blizzard_AuctionData.lua:209,214).
-function Scanner.GearBrowseQuery()
-  return {
-    searchString = "", minLevel = 0, maxLevel = 0, sorts = BrowseSorts(),
-    filters = { AH_FILTER.UncommonQuality or 8, AH_FILTER.RareQuality or 9, AH_FILTER.EpicQuality or 10 },
-    itemClassFilters = { { classID = ITEM_CLASS.Weapon or 2 }, { classID = ITEM_CLASS.Armor or 4 } },
-  }
 end
 
 -- ---------------------------------------------------------------------------
@@ -225,12 +170,6 @@ local function IsWeaponOrArmor(itemID)
   return classID == (ITEM_CLASS.Weapon or 2) or classID == (ITEM_CLASS.Armor or 4)
 end
 
-local function HasFullBrowse()
-  if not C_AuctionHouse.HasFullBrowseResults then return false end
-  local ok, full = pcall(C_AuctionHouse.HasFullBrowseResults)
-  return ok and full == true
-end
-
 -- itemIDs from a list ({ id, ... }, order kept) or a set ({ [id] = true }, sorted)
 local function IDList(t)
   local out = {}
@@ -247,11 +186,8 @@ end
 -- kinds
 --   Scanner:RegisterKind(kind, { label = function() return L.X end, phases = { phaseSpec, ... },
 --                                canStart = function() return ok, message end })   -- canStart optional
---   { type = "search", items = function() return { itemID, ... } end, label = "..." | function }
---   { type = "browse", query = function() return AuctionHouseBrowseQuery end, scope = "full"|"gear", label = ... }
---   { type = "wait", ["until"] = function() return done, progressLabel end, timeout = 20, label = ... }
---       ("until" is a Lua keyword, so the field is written ["until"]; `check` is accepted too.) Polls every 0.5 s while
---       the scan runs and ends when done is true or after timeout seconds; skipped if already done when reached.
+--   phaseSpec = { items = function() return { itemID, ... } end, label = "..." | function,
+--                 again = true: run the phase again while its list has items not searched yet }
 
 function Scanner:RegisterKind(kind, def)
   def = def or {}
@@ -350,38 +286,30 @@ function Scanner:Start(kind)
       return false
     end
   end
-  self:HookBrowse()
   self.kind, self.def = kind, def
   self.active = true
   self.token = self.token + 1
   self.startedAt = GetTime()
-  self.listed, self.missing, self.browsed = 0, 0, nil
+  self.listed, self.missing = 0, 0
   self.searched = {}
-  self.goQuick = nil
-  self.phases = (def.quick and Scanner.IsQuick and Scanner.IsQuick()) and def.quick or def.phases
-  self.quick = (self.phases == def.quick)
-  self.phase, self.phaseCount = 0, #self.phases
+  self.phases = def.phases
+  self.phase, self.phaseCount, self.round = 0, #self.phases, 1
   self.index, self.total = 0, 0
-  self.current, self.browse, self.queue, self.wait = nil, nil, nil, nil
+  self.current, self.queue = nil, nil
   local hasWork = self:AdvancePhase()
-  local total = 0
-  if hasWork then total = self.total end   -- nil when the first phase is a browse (unknown size)
-  UICall("OnScanStart", kind, total)
+  UICall("OnScanStart", kind, hasWork and self.total or 0)
   if hasWork then self:BeginPhase() else self:Finish() end
   return true
 end
 
 function Scanner:Stop(reason)
   if not self.active then return end
-  local br = self.browse
-  local done, total
-  if br then done, total = br.pages, nil else done, total = math.max((self.index or 1) - 1, 0), self.total end
+  local done, total = math.max((self.index or 1) - 1, 0), self.total
   self.active = false
   self:CancelTimer()
   self.token = self.token + 1
-  if br then self.browsed = (self.browsed or 0) + br.items end
-  if self.listed + self.missing > 0 or self.browsed then WC:DB().scannedAt[self.kind] = time() end
-  self.current, self.browse, self.queue, self.wait = nil, nil, nil, nil
+  if self.listed + self.missing > 0 then WC:DB().scannedAt[self.kind] = time() end
+  self.current, self.queue = nil, nil
   self:FlushPrices()
   UICall("OnScanStopped", self.kind, reason, done, total)
 end
@@ -390,53 +318,38 @@ function Scanner:Finish()
   self.active = false
   self:CancelTimer()
   self.token = self.token + 1
-  self.current, self.browse, self.queue, self.wait = nil, nil, nil, nil
-  if self.listed + self.missing > 0 or self.browsed then WC:DB().scannedAt[self.kind] = time() end
+  self.current, self.queue = nil, nil
+  if self.listed + self.missing > 0 then WC:DB().scannedAt[self.kind] = time() end
   self:FlushPrices()
   UICall("OnScanDone", self.kind, {
     total = self.listed + self.missing, listed = self.listed, missing = self.missing,
-    seconds = GetTime() - (self.startedAt or GetTime()), browsed = self.browsed,
+    seconds = GetTime() - (self.startedAt or GetTime()),
   })
 end
 
 -- Moves to the next phase that has work. Returns false when no phase is left.
+-- A phase marked `again` is first asked again: what it found may have changed what it wants searched. This ends,
+-- because an item is searched once per check and a round without anything new moves on.
 function Scanner:AdvancePhase()
+  local cur = self.phases[self.phase]
+  if cur and cur.again and self:PreparePhase(cur) then
+    self.round = (self.round or 1) + 1
+    return true
+  end
   while true do
     self.phase = self.phase + 1
     local spec = self.phases[self.phase]
     if not spec then return false end
-    if self:PreparePhase(spec) then return true end
+    if self:PreparePhase(spec) then
+      self.round = 1
+      return true
+    end
   end
 end
 
 function Scanner:PreparePhase(spec)
-  self.current, self.browse, self.queue, self.wait = nil, nil, nil, nil
+  self.current, self.queue = nil, nil
   self.index = 0
-  if spec.type == "wait" then
-    local check = spec["until"] or spec.check
-    if type(check) ~= "function" then return false end
-    local ok, done = pcall(check)
-    if not ok or done then return false end   -- nothing to wait for
-    self.wait = { check = check, timeout = tonumber(spec.timeout) or 20, startedAt = GetTime() }
-    self.total = nil
-    return true
-  end
-  if spec.type == "browse" then
-    if not (C_AuctionHouse.SendBrowseQuery and C_AuctionHouse.GetBrowseResults) then return false end
-    local scope = (spec.scope == "gear") and "gear" or "full"
-    local query
-    if spec.query then
-      local ok, q = pcall(spec.query)
-      if ok then query = q end
-    else
-      query = (scope == "gear") and Scanner.GearBrowseQuery() or Scanner.FullBrowseQuery()
-    end
-    if type(query) ~= "table" then return false end
-    self.browse = { scope = scope, query = query, seen = {}, rows = {},
-                    pages = 0, items = 0, tries = 0, state = "pending", startedAt = GetTime() }
-    self.total = nil
-    return true
-  end
   local ids = {}
   if spec.items then
     local ok, list = pcall(spec.items)
@@ -458,41 +371,17 @@ end
 
 function Scanner:BeginPhase()
   local spec = self.phases[self.phase]
-  UICall("OnScanPhase", self.kind, self.phase, self.phaseCount, Text(spec.label))
-  if self.browse then
-    self:BrowseTrySend()
-  elseif self.wait then
-    self:WaitTick()
-  else
-    self:Next()
-  end
+  UICall("OnScanPhase", self.kind, self.phase, self.phaseCount, Text(spec.label), spec.again and self.round or nil)
+  self:Next()
 end
 
 function Scanner:PhaseDone()
-  self.current, self.browse, self.queue, self.wait = nil, nil, nil, nil
+  self.current, self.queue = nil, nil
   if self:AdvancePhase() then
     self:BeginPhase()
   else
     self:Finish()
   end
-end
-
--- wait phase: poll until the condition holds (or the timeout), then go on with what is there
-function Scanner:WaitTick()
-  local w = self.wait
-  if not self.active or not w then return end
-  local ok, done, label = pcall(w.check)
-  if not ok then
-    Debug("wait", done)
-    done = true
-  end
-  if done or GetTime() - w.startedAt >= w.timeout then
-    self.wait = nil
-    self:PhaseDone()
-    return
-  end
-  UICall("OnScanProgress", self.kind, 0, nil, label)
-  self:Schedule(WAIT_POLL, self.WaitTick)
 end
 
 -- ---------------------------------------------------------------------------
@@ -506,21 +395,23 @@ local function MakeKey(itemID, itemLevel, itemSuffix)
 end
 
 -- Gear is keyed by item level and suffix (ItemKey {itemID, itemLevel, itemSuffix, battlePetSpeciesID}, AHD:1637).
--- Blizzard searches the exact key of the browse row the user picked (SelectBrowseResult -> QueryItem,
--- AHUI/Shared/Blizzard_AuctionHouseFrame.lua:683-752), so the key of the cheapest variant the browse reported is used.
--- 1.3.0 searched MakeItemKey(itemID) (level 0), proven for crates and writs: for gear without a suffix, the other
--- level (0 / the item's level) is tried once when the first key finds nothing. Random-suffix gear has no fallback.
+-- 1.3.0 searched MakeItemKey(itemID) (level 0), proven for crates and writs: for gear the other level (the item's
+-- own) is tried once when the first key finds nothing. Random-suffix gear ("of the Bear") is listed under its
+-- suffix, which nothing here knows: a search that finds nothing proves nothing for it (Profit.lua does not treat
+-- such gear as gone).
 function Scanner:KeyFor(cur)
   local id = cur.itemID
-  local b = WC:DB().browse.items[id]
-  local lvl, sfx = tonumber(b and b.ilvl) or 0, tonumber(b and b.sfx) or 0
   cur.altLevel = nil
-  if lvl > 0 or sfx > 0 then
-    if sfx == 0 then cur.altLevel = 0 end
-    return MakeKey(id, lvl, sfx)
-  end
-  if IsWeaponOrArmor(id) and WC.ItemInfo then
-    local _, _, _, ilvl = WC.ItemInfo(id)
+  if IsWeaponOrArmor(id) then
+    local ilvl
+    if WC.ItemInfo then
+      local _, _, _, lvl = WC.ItemInfo(id)
+      ilvl = lvl
+    end
+    if not ilvl and WC.StaticGear then
+      local _, _, lvl = WC.StaticGear(id)
+      ilvl = lvl
+    end
     if ilvl and ilvl > 0 then cur.altLevel = ilvl end
   end
   return MakeKey(id)
@@ -530,18 +421,6 @@ function Scanner:Next()
   if not self.active then return end
   self:CancelTimer()
   self.token = self.token + 1
-  if self.goQuick then
-    self.goQuick = nil
-    if self.def and self.def.quick and not self.quick and Scanner.IsQuick() then
-      -- An Auctionator scan arrived during a full crate / writ scan: what is not searched yet is priced from it,
-      -- so the scan goes on as a quick one (everything may be asked for again: the top entries are searched now).
-      self.searched = {}
-      self.phases, self.quick = self.def.quick, true
-      self.phase, self.phaseCount = 0, #self.phases
-      self:PhaseDone()
-      return
-    end
-  end
   self.index = self.index + 1
   local cur = self.queue and self.queue[self.index]
   if not cur then
@@ -609,17 +488,6 @@ end
 -- AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED (AHD:1286): the server dropped a message; re-send ours.
 function Scanner:OnMessageDropped()
   if not self.active then return end
-  local br = self.browse
-  if br then
-    if br.state ~= "sent" then return end
-    if br.tries < MAX_TRIES + 1 then
-      br.state = "pending"
-      self:Schedule(0.5, self.BrowseTrySend)
-    else
-      self:BrowseDone(false)
-    end
-    return
-  end
   local cur = self.current
   if cur and cur.state == "moresent" then
     cur.moreDrops = (cur.moreDrops or 0) + 1
@@ -645,9 +513,7 @@ function Scanner:OnThrottleReady()
   if not self.active or not self.waitingThrottle then return end
   self.waitingThrottle = false
   local cur = self.current
-  if self.browse then
-    self:BrowseTrySend()
-  elseif cur and cur.state == "more" then
+  if cur and cur.state == "more" then
     self:TrySendMore()
   elseif cur then
     self:TrySend()
@@ -673,7 +539,7 @@ end
 -- COMMODITY_SEARCH_RESULTS_UPDATED(itemID) (AHD:1415)
 function Scanner:OnCommodityResults(itemID)
   local cur = self.current
-  if not self.active or self.browse or not cur or cur.itemID ~= itemID or cur.tries == 0 then return end
+  if not self.active or not cur or cur.itemID ~= itemID or cur.tries == 0 then return end
   local AH = C_AuctionHouse
   local has = AH.HasSearchResults and AH.HasSearchResults(cur.key)
   local full = AH.HasFullCommoditySearchResults and AH.HasFullCommoditySearchResults(itemID)
@@ -702,7 +568,7 @@ end
 -- ITEM_SEARCH_RESULTS_UPDATED(itemKey, newAuctionID?) (AHD:1465) / ITEM_SEARCH_RESULTS_ADDED(itemKey) (AHD:1455)
 function Scanner:OnItemResults(itemKey)
   local cur = self.current
-  if not self.active or self.browse or not cur or type(itemKey) ~= "table" or itemKey.itemID ~= cur.itemID
+  if not self.active or not cur or type(itemKey) ~= "table" or itemKey.itemID ~= cur.itemID
      or cur.tries == 0 or cur.state == "done" then return end
   local AH = C_AuctionHouse
   local paging = (cur.state == "more" or cur.state == "moresent")
@@ -805,7 +671,7 @@ function Scanner:Record(cur, entries, unitsListed)
     if res.status == "listed" and unitsListed and unitsListed > res.avail then res.avail = unitsListed end
   end
   res.time = time()
-  -- the key the answer is for (gear): Profit trusts a "nothing listed" only for the variant the browse showed
+  -- the key the answer is for (gear)
   local k = cur.key
   if type(k) == "table" then
     if (k.itemLevel or 0) > 0 then res.ilvl = k.itemLevel end
@@ -823,194 +689,12 @@ function Scanner:Record(cur, entries, unitsListed)
 end
 
 -- ---------------------------------------------------------------------------
--- browse phase
--- Paging as in Blizzard's BrowseResultsFrame (AHUI/Shared/Blizzard_AuctionHouseBrowseResultsFrame.lua:74-124):
--- AUCTION_HOUSE_BROWSE_RESULTS_UPDATED -> GetBrowseResults() (all rows so far); RequestMoreBrowseResults() ->
--- AUCTION_HOUSE_BROWSE_RESULTS_ADDED(addedBrowseResults) (AHD:1141-1155); stop when HasFullBrowseResults() (AHD:722).
--- BrowseResultInfo = {itemKey, appearanceLink?, totalQuantity, minPrice, containsOwnerItem} (AHD:1608).
-
-function Scanner:BrowseTrySend()
-  local br = self.browse
-  if not self.active or not br or br.state ~= "pending" then return end
-  local wait = self:SendWait()
-  if wait > 0.001 then
-    self:Schedule(math.max(wait, 0.05), self.BrowseTrySend)
-    return
-  end
-  br.tries = br.tries + 1
-  br.state = "sent"
-  br.sentOnce = true
-  self.lastSend = GetTime()
-  self.waitingThrottle = false
-  local ok, err
-  if br.pages == 0 then
-    self.sendingBrowse = true
-    ok, err = pcall(C_AuctionHouse.SendBrowseQuery, br.query)   -- AHD:1021
-    self.sendingBrowse = false
-  else
-    ok, err = pcall(C_AuctionHouse.RequestMoreBrowseResults)   -- AHD:951
-  end
-  if not ok then
-    Debug("browse", err)
-    self:BrowseDone(false)
-    return
-  end
-  self:Schedule(BROWSE_TIMEOUT, self.OnBrowseTimeout)
-end
-
--- merge browse rows into db.browse.items (min over variants of one itemID, units summed); returns new rows
-function Scanner:MergeBrowse(br, list)
-  local items = WC:DB().browse.items
-  local now, server = time(), ServerNow()
-  local added = 0
-  for _, row in ipairs(list) do
-    local key = type(row) == "table" and row.itemKey
-    local id = key and key.itemID
-    local price = key and row.minPrice
-    -- skip battle pets (they share one itemID) and rows without a buyout price
-    if id and (key.battlePetSpeciesID or 0) == 0 and type(price) == "number" and price > 0 then
-      local lvl, sfx = key.itemLevel or 0, key.itemSuffix or 0
-      local rowKey = id .. ":" .. lvl .. ":" .. sfx
-      if not br.rows[rowKey] then
-        br.rows[rowKey] = true
-        added = added + 1
-        local qty = row.totalQuantity or 0
-        local e = items[id]
-        if not br.seen[id] or not e then
-          br.seen[id] = true
-          br.items = br.items + 1
-          e = { min = price, qty = qty, t = now, ilvl = (lvl > 0) and lvl or nil, sfx = (sfx > 0) and sfx or nil }
-          items[id] = e
-        else
-          e.qty = (e.qty or 0) + qty
-          if price < e.min then   -- key of the cheapest variant, searched later by the flips scan
-            e.min = price
-            e.ilvl = (lvl > 0) and lvl or nil
-            e.sfx = (sfx > 0) and sfx or nil
-          end
-        end
-        if WC.Store then WC.Store:RecordHistory(id, e.min, e.qty, server) end
-      end
-    end
-  end
-  return added
-end
-
--- AUCTION_HOUSE_BROWSE_RESULTS_UPDATED (isUpdate) / _ADDED(addedBrowseResults)
-function Scanner:OnBrowseResults(added, isUpdate)
-  local br = self.browse
-  if not self.active or not br or not br.sentOnce or br.foreign then return end
-  if isUpdate and br.pages > 0 then
-    -- our pages after the first arrive as _ADDED; a whole new list now is somebody else's query, e.g. Blizzard's
-    -- Favorites button (QueryAll -> C_AuctionHouse.SearchForFavorites, AHUI/Shared/Blizzard_AuctionHouseFrame.lua:760-772).
-    -- End our browse with what it has and delete nothing.
-    br.foreign = true
-    br.state = "done"
-    self:BrowseDone(false)
-    return
-  end
-  local list = added
-  if type(list) ~= "table" then
-    local ok, all = pcall(C_AuctionHouse.GetBrowseResults)   -- AHD:216
-    list = (ok and type(all) == "table") and all or {}
-  end
-  local newRows = self:MergeBrowse(br, list)
-  if br.state ~= "sent" and newRows == 0 then return end   -- an echo between our requests: nothing new
-  self:CancelTimer()
-  br.pages = br.pages + 1
-  br.tries = 0
-  UICall("OnScanProgress", self.kind, br.pages, nil, L.SCAN_PAGE_FMT:format(br.pages, br.items))
-  self:PricesChanged()
-  if HasFullBrowse() then
-    self:BrowseDone(true)
-  elseif br.pages >= BROWSE_MAX_PAGES or GetTime() - br.startedAt >= BROWSE_MAX_TIME then
-    self:BrowseDone(false)
-  else
-    br.state = "pending"
-    self:BrowseTrySend()
-  end
-end
-
-function Scanner:OnBrowseTimeout()
-  local br = self.browse
-  if not br or br.state ~= "sent" then return end
-  if br.pages > 0 and HasFullBrowse() then
-    self:BrowseDone(true)
-  elseif br.tries < MAX_TRIES then
-    br.state = "pending"
-    self:BrowseTrySend()
-  else
-    self:BrowseDone(false)
-  end
-end
-
--- AUCTION_HOUSE_BROWSE_FAILURE (AHD:1135)
-function Scanner:OnBrowseFailure()
-  local br = self.browse
-  if not self.active or not br or br.state ~= "sent" then return end
-  if br.tries < MAX_TRIES then
-    br.state = "pending"
-    self:Schedule(1, self.BrowseTrySend)
-  else
-    self:BrowseDone(false)
-  end
-end
-
--- gear the gear browse should have returned (weapon/armor, uncommon..epic); unknown quality = keep the entry
-local function CoveredByGearBrowse(itemID)
-  if not IsWeaponOrArmor(itemID) or not WC.ItemInfo then return false end
-  local _, _, quality = WC.ItemInfo(itemID)
-  return quality ~= nil and quality >= 2 and quality <= 4
-end
-
--- complete = the AH said it sent everything: entries this browse should have seen but didn't are gone.
-function Scanner:BrowseDone(complete)
-  self:CancelTimer()
-  local br = self.browse
-  if not br then return end
-  local db = WC:DB()
-  if complete then
-    local items = db.browse.items
-    for itemID in pairs(items) do
-      if not br.seen[itemID] and (br.scope == "full" or CoveredByGearBrowse(itemID)) then items[itemID] = nil end
-    end
-    db.browse[br.scope] = time()   -- only a complete browse counts as "the AH as of then"
-  end
-  self.browsed = (self.browsed or 0) + br.items
-  self.browse = nil
-  self:PricesChanged()
-  self:PhaseDone()
-end
-
--- Someone else (the AH window, another addon) started a browse while ours runs: the next results are theirs,
--- so our browse phase ends with what it has (nothing is deleted) and the scan goes on.
--- Both replace the browse result list: SendBrowseQuery (AHD:1021) and SearchForFavorites(sorts) (AHD:1000).
-local function OnForeignBrowse()
-  local br = Scanner.browse
-  if Scanner.sendingBrowse or not Scanner.active or not br or br.foreign then return end
-  br.foreign = true
-  br.state = "done"
-  Scanner:Schedule(0.1, function(self) if self.browse == br then self:BrowseDone(false) end end)
-end
-
-function Scanner:HookBrowse()
-  if self.hooked or not hooksecurefunc then return end
-  self.hooked = true
-  for _, fname in ipairs({ "SendBrowseQuery", "SearchForFavorites" }) do
-    if C_AuctionHouse[fname] then pcall(hooksecurefunc, C_AuctionHouse, fname, OnForeignBrowse) end
-  end
-end
-
--- ---------------------------------------------------------------------------
 -- events (the scanner's own frame; AH show/close is handled in Core.lua)
 
 local HANDLERS = {
   COMMODITY_SEARCH_RESULTS_UPDATED = Scanner.OnCommodityResults,
   ITEM_SEARCH_RESULTS_UPDATED = Scanner.OnItemResults,
   ITEM_SEARCH_RESULTS_ADDED = Scanner.OnItemResults,
-  AUCTION_HOUSE_BROWSE_RESULTS_UPDATED = function(self) self:OnBrowseResults(nil, true) end,
-  AUCTION_HOUSE_BROWSE_RESULTS_ADDED = function(self, added) self:OnBrowseResults(added, false) end,
-  AUCTION_HOUSE_BROWSE_FAILURE = Scanner.OnBrowseFailure,
   AUCTION_HOUSE_THROTTLED_MESSAGE_DROPPED = Scanner.OnMessageDropped,
   AUCTION_HOUSE_THROTTLED_SYSTEM_READY = Scanner.OnThrottleReady,
 }
@@ -1025,34 +709,21 @@ frame:SetScript("OnEvent", function(_, event, ...)
 end)
 
 -- ---------------------------------------------------------------------------
--- scan kinds owned by the scanner (craft is registered by Profit.lua)
+-- the kinds owned by the scanner (craft is registered by Profit.lua)
 
--- Quick scans. When External.lua has usable prices (a full Auctionator scan of this house, watched, < 12 h old) the
--- crate and writ lists are already ranked from estimates, so a scan only searches what ranks at the top: the best
--- quickTop entries, in up to three rounds because their exact prices can move other entries up. An item is searched
--- once per scan (Scanner.searched), so a round whose entries were all searched has nothing to do and is skipped.
--- Without such prices, or with the setting off, the scan searches everything as before. A kind that can do this
--- has two phase lists, def.phases and def.quick; Scanner:Start picks one for the whole scan.
-local function Quick()
-  local X = WC.External
-  return WC:DB().quickScan ~= false and X ~= nil and X.Usable ~= nil and X:Usable()
-end
-Scanner.IsQuick = Quick
-
+-- What a tab's check button searches: its best entries. Prices come from Auctionator, where only the cheapest
+-- price of an item is known, and not whether it is still listed (an item that sold out since the scan keeps its
+-- price). An exact search adds how many are listed at which price (a single cheap listing is not a bargain for a
+-- bundle of 20), which can change the order. So the best quickTop entries are searched in rounds: after a round
+-- the list is ranked again and what is new among the best is searched next, until the best quickTop entries are
+-- all exact. With prices from a moment ago that is one round or two; the older Auctionator's scan, the more of
+-- its best entries are gone and the more rounds it takes.
 local function QuickTop()
   local n = tonumber(WC:DB().quickTop) or 5
   if n < 1 or n > 50 then n = 5 end
   return math.floor(n)
 end
-
-local function AllCrateItems()
-  local list = {}
-  for _, c in ipairs(WC.CRATES or {}) do
-    list[#list + 1] = c.id
-    for _, o in ipairs(c.opts) do list[#list + 1] = o[1] end
-  end
-  return list
-end
+Scanner.QuickTop = QuickTop
 
 -- the crate and every bundle material of the best ranked crates that are shown
 local function TopCrateItems()
@@ -1086,94 +757,54 @@ local function QuickLabel()
   return L.SCAN_PH_QUICK:format(QuickTop())
 end
 
--- External.lua watched an Auctionator scan finish: a full crate / writ scan that is running switches to quick
--- before its next item (Scanner:Next)
-WC:On("EXTERNAL_SCAN", function()
-  if Scanner.active and Scanner.def and Scanner.def.quick and not Scanner.quick then Scanner.goQuick = true end
-end)
+-- without Auctionator's prices there is no ranking, so nothing to check: say what is missing
+local function NeedPrices(items)
+  return function()
+    local X = WC.External
+    if X and X.Usable and not X:Usable() then return false, X:Describe() end
+    if #items() == 0 then return false, L.SCAN_NOTHING end
+    return true
+  end
+end
 
 Scanner:RegisterKind("crates", {
   label = function() return L.SCAN_KIND_CRATES end,
+  canStart = NeedPrices(TopCrateItems),
   phases = {
-    { type = "search", label = function() return L.SCAN_PH_CRATES end, items = AllCrateItems },
-  },
-  -- quick: three rounds of the best entries; the first looks at everything if nothing ranks from the estimates
-  quick = {
-    { type = "search", label = QuickLabel,
-      items = function()
-        local list = TopCrateItems()
-        if #list > 0 then return list end
-        return AllCrateItems()
-      end },
-    { type = "search", label = QuickLabel, items = TopCrateItems },
-    { type = "search", label = QuickLabel, items = TopCrateItems },
+    { label = QuickLabel, items = TopCrateItems, again = true },
   },
 })
 
 Scanner:RegisterKind("writs", {
   label = function() return L.SCAN_KIND_WRITS end,
+  canStart = NeedPrices(TopWritItems),
   phases = {
-    { type = "search", label = function() return L.SCAN_PH_WRITS end,
-      items = function()
-        local list = {}
-        for _, w in ipairs(WC.WRITS or {}) do list[#list + 1] = w.writ end
-        return list
-      end },
-    -- the requested items, only for writs that are for sale (unless "ignore writs not for sale" is off)
-    { type = "search", label = function() return L.SCAN_PH_WRIT_ITEMS end,
-      items = function()
-        local db, list = WC:DB(), {}
-        for _, w in ipairs(WC.WRITS or {}) do
-          local _, status = WC:CostFor(w.writ, 1)
-          if not db.hideNoWrit or status == "ok" then list[#list + 1] = w.item end
-        end
-        return list
-      end },
-  },
-  quick = {
-    { type = "search", label = QuickLabel,
-      items = function()
-        local list = TopWritItems()
-        if #list > 0 then return list end
-        for _, w in ipairs(WC.WRITS or {}) do list[#list + 1] = w.writ end
-        return list
-      end },
-    { type = "search", label = QuickLabel, items = TopWritItems },
-    { type = "search", label = QuickLabel, items = TopWritItems },
+    { label = QuickLabel, items = TopWritItems, again = true },
   },
 })
+
+-- listings cheaper than the vendor pays, biggest first (Profit decides): how many there really are
+local function FlipItems()
+  local n = tonumber(WC:DB().flipCandidates) or 80   -- setting (40 / 80 / 150)
+  if n < 1 or n > 1000 then n = 80 end
+  if WC.Profit and WC.Profit.FlipCandidates then return WC.Profit:FlipCandidates(math.floor(n)) or {} end
+  return {}
+end
 
 Scanner:RegisterKind("flips", {
   label = function() return L.SCAN_KIND_FLIPS end,
+  canStart = NeedPrices(FlipItems),
   phases = {
-    { type = "browse", scope = "full", label = function() return L.SCAN_PH_BROWSE_ALL end,
-      query = Scanner.FullBrowseQuery },
-    -- on a fresh login most browsed items have no vendor price yet (C_Item.GetItemInfo is nil until the item data
-    -- arrives): wait for them, or the search phase would skip them
-    { type = "wait", timeout = 20, label = function() return L.SCAN_PH_WAIT_ITEMS end,
-      ["until"] = function()
-        local n = 0
-        if WC.Profit and WC.Profit.FlipPending then n = WC.Profit:FlipPending() or 0 end
-        return n == 0, L.SCAN_WAIT_ITEMS_FMT:format(n)
-      end },
-    -- listings cheaper than the vendor pays, biggest first (Profit decides)
-    { type = "search", label = function() return L.SCAN_PH_FLIP_CHECK end,
-      items = function()
-        local n = tonumber(WC:DB().flipCandidates) or 80   -- setting (40 / 80 / 150)
-        if n < 1 or n > 1000 then n = 80 end
-        if WC.Profit and WC.Profit.FlipCandidates then return WC.Profit:FlipCandidates(math.floor(n)) or {} end
-        return {}
-      end },
+    { label = function() return L.SCAN_PH_FLIP_CHECK end, items = FlipItems },
   },
 })
 
+-- what gear disenchants into decides every value on the tab
 Scanner:RegisterKind("de", {
   label = function() return L.SCAN_KIND_DE end,
   phases = {
-    { type = "search", label = function() return L.SCAN_PH_DE_MATS end,
+    { label = function() return L.SCAN_PH_DE_MATS end,
       items = function() return (WC.DE and WC.DE.mats) or {} end },
-    { type = "browse", scope = "gear", label = function() return L.SCAN_PH_DE_GEAR end,
-      query = Scanner.GearBrowseQuery },
   },
 })
 
@@ -1184,7 +815,7 @@ Scanner:RegisterKind("history", {
     return false, L.HIST_NOTHING_WATCHED
   end,
   phases = {
-    { type = "search", label = function() return L.SCAN_PH_WATCHED end,
+    { label = function() return L.SCAN_PH_WATCHED end,
       items = function() return WC.Store and WC.Store:Watched() or {} end },
   },
 })

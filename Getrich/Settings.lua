@@ -23,14 +23,10 @@ WC.AddLocale({
   enUS = {
     SET_INTRO = "Money-making helper for WoW Forever. Changes apply right away.",
     SET_GENERAL = "General",
-    SET_CHAT = "Print the best find in chat when a scan finishes",
-    SET_CHAT_TIP = "One chat line with the best result of the scan.",
-    SET_AUC = "Use Auctionator's prices as estimates",
-    SET_AUC_TIP = "After Auctionator finishes a full scan of this Auction House (with Getrich loaded), its cheapest prices fill in, for 12 hours, what Getrich has not searched itself on the Crates and Writs tabs. Such numbers are marked ~: only the cheapest price is known, so a bundle can cost more. /gr auc tells whether they are in use.",
-    SET_QUICK = "Quick scans for crates and writs",
-    SET_QUICK_TIP = "With Auctionator's prices the lists are already ranked, so a scan only searches the best entries exactly (a few seconds instead of minutes). Off: every scan searches everything.",
-    SET_QUICKTOP = "Entries a quick scan checks",
-    SET_QUICKTOP_TIP = "How many of the best crates / writs a quick scan searches exactly.",
+    SET_CHAT = "Print the best find in chat when a check finishes",
+    SET_CHAT_TIP = "One chat line with the best result of the check.",
+    SET_QUICKTOP = "Entries \"Check the best\" searches",
+    SET_QUICKTOP_TIP = "How many of the best crates, writs or recipes are searched exactly. Each one takes a few seconds.",
     SET_DOCK = "Put the window next to the Auction House",
     SET_DOCK_TIP = "When the Auction House opens, the Getrich window opens on its right side (unless you dragged it somewhere else).",
     SET_AHTINT = "Mark cheap listings in the Auction House",
@@ -47,7 +43,7 @@ WC.AddLocale({
     SET_FLIP_GONE = "Show items that are no longer cheap",
     SET_FLIP_GONE_TIP = "The exact check sometimes finds an item already sold, or no longer below the vendor price. Those are hidden unless this is on.",
     SET_FLIP_CAND = "Items checked one by one",
-    SET_FLIP_CAND_TIP = "After reading the whole Auction House, this many of the most promising items are searched one by one for exact prices. More items = a longer scan.",
+    SET_FLIP_CAND_TIP = "On the Flips tab, this many of the most promising items are searched one by one for the exact quantity. More items = a longer check.",
     SET_CRAFT_ONLY = "Only profitable recipes",
     SET_CRAFT_ONLY_TIP = "Hides recipes that lose money however you sell the product.",
     SET_CRAFT_MISSING = "Hide recipes with missing prices",
@@ -81,11 +77,11 @@ WC.AddLocale({
     SET_PRUNE_TIP = "Search results and whole-AH listing rows older than this many days are deleted. The price history is kept.",
     SET_DAYS_FMT = "%d days",
     SET_DATA = "Saved data",
-    SET_DATA_SUMMARY = "Saved now: price history for %d items · %d search results · %d items from reading the whole AH · %d disenchants · %d vendor prices",
+    SET_DATA_SUMMARY = "Saved now: price history for %d items · %d exact search results · %d disenchants · %d vendor prices",
     SET_CLEAR_HISTORY = "Clear price history",
     SET_CLEAR_HISTORY_Q = "Delete the price history of every item?\nThis can't be undone.",
-    SET_CLEAR_SCANS = "Clear scan results",
-    SET_CLEAR_SCANS_Q = "Delete all Auction House scan results (prices from searches and from reading the whole AH)?\nThis can't be undone.",
+    SET_CLEAR_SCANS = "Clear search results",
+    SET_CLEAR_SCANS_Q = "Delete everything Getrich found by searching the Auction House itself (the exact listings of checked items)?\nAuctionator's prices are not touched. This can't be undone.",
     SET_CLEAR_DE = "Clear disenchant records",
     SET_CLEAR_DE_Q = "Delete the disenchant results you recorded?\nDisenchant values go back to estimates.",
     SET_CLEAR_VENDOR = "Clear merchant records",
@@ -94,7 +90,7 @@ WC.AddLocale({
     SET_RESET_Q = "Set every option back to its default?\nSaved prices and records are kept, and so are the two data-keeping options (merging hourly prices, deleting listing details).",
     SET_DONE_FMT = "%s: done.",
     SET_CONFIRM_AGAIN = "Click again to confirm",
-    SET_SCAN_STOPPED = "Scan stopped (data cleared)",
+    SET_SCAN_STOPPED = "Check stopped (data cleared)",
     SET_ABOUT = "About",
     SET_VERSION_FMT = "Version %s · released %s",
     SET_AUTHOR = "Author",
@@ -106,14 +102,10 @@ WC.AddLocale({
   zhCN = {
     SET_INTRO = "魔兽世界 Forever 挣钱助手。改动立即生效。",
     SET_GENERAL = "常规",
-    SET_CHAT = "扫描完成时在聊天框显示最优结果",
-    SET_CHAT_TIP = "在聊天框显示一行这次扫描的最优结果。",
-    SET_AUC = "用 Auctionator 的价格做估算",
-    SET_AUC_TIP = "Auctionator 在这个拍卖行完成一次全扫描后（当时 Getrich 已加载），12 小时内，箱子页和 Writ 页里 Getrich 没有亲自搜索过的物品先用它记录的最低价。这类数字前面带 ~：只知道最低价，整组购买可能更贵。输入 /gr auc 可以查看当前是否在用。",
-    SET_QUICK = "箱子和 Writ 用快速扫描",
-    SET_QUICK_TIP = "有 Auctionator 的价格时，列表已经排好名，扫描只精确搜索排在前面的几项（几秒钟，而不是一两分钟）。关闭后每次扫描都搜索全部。",
-    SET_QUICKTOP = "快速扫描核实几项",
-    SET_QUICKTOP_TIP = "快速扫描时，精确搜索排在最前面的几个箱子 / Writ。",
+    SET_CHAT = "核实完成时在聊天框显示最优结果",
+    SET_CHAT_TIP = "在聊天框显示一行这次核实的最优结果。",
+    SET_QUICKTOP = "『核实前几名』核实几项",
+    SET_QUICKTOP_TIP = "精确搜索排在最前面的几个箱子、Writ 或配方。每一项需要几秒钟。",
     SET_DOCK = "窗口贴在拍卖行旁边",
     SET_DOCK_TIP = "打开拍卖行时，Getrich 窗口出现在拍卖行右边（你拖动过窗口的话就留在原处）。",
     SET_AHTINT = "在拍卖行标出便宜的挂单",
@@ -130,7 +122,7 @@ WC.AddLocale({
     SET_FLIP_GONE = "显示已经不便宜的",
     SET_FLIP_GONE_TIP = "精确查询时，有些物品已经被买走，或者不再低于商店价。默认隐藏，勾选后显示。",
     SET_FLIP_CAND = "逐个精确查询的物品数",
-    SET_FLIP_CAND_TIP = "读完整个拍卖行后，挑出最有希望的这么多种物品逐个查询准确价格。数量越多，扫描越久。",
+    SET_FLIP_CAND_TIP = "倒卖页点核实时，逐个精确搜索最有希望的这么多种物品。数量越多，时间越久。",
     SET_CRAFT_ONLY = "只看赚钱的配方",
     SET_CRAFT_ONLY_TIP = "不管怎么卖成品都亏钱的配方不显示。",
     SET_CRAFT_MISSING = "隐藏缺价格的配方",
@@ -164,11 +156,11 @@ WC.AddLocale({
     SET_PRUNE_TIP = "超过这么多天的搜索结果和全拍卖行挂单行会被删除。价格走势保留。",
     SET_DAYS_FMT = "%d 天",
     SET_DATA = "保存的数据",
-    SET_DATA_SUMMARY = "当前保存：%d 种物品的价格走势 · %d 条搜索结果 · %d 种全拍卖行读取的物品 · %d 次分解 · %d 个商店价格",
+    SET_DATA_SUMMARY = "当前保存：%d 种物品的价格走势 · %d 条精确搜索结果 · %d 次分解 · %d 个商店价格",
     SET_CLEAR_HISTORY = "清除价格走势",
     SET_CLEAR_HISTORY_Q = "删除所有物品的价格走势记录？\n删除后无法恢复。",
-    SET_CLEAR_SCANS = "清除扫描结果",
-    SET_CLEAR_SCANS_Q = "删除所有拍卖行扫描结果（逐个搜索的价格和读取整个拍卖行的价格）？\n删除后无法恢复。",
+    SET_CLEAR_SCANS = "清除搜索结果",
+    SET_CLEAR_SCANS_Q = "删除 Getrich 自己搜索拍卖行得到的全部结果（核实过的物品的挂单明细）？\nAuctionator 的价格不受影响。删除后无法恢复。",
     SET_CLEAR_DE = "清除分解记录",
     SET_CLEAR_DE_Q = "删除你记录的分解结果？\n分解价值会变回估计值。",
     SET_CLEAR_VENDOR = "清除商人记录",
@@ -177,7 +169,7 @@ WC.AddLocale({
     SET_RESET_Q = "把所有选项恢复成默认值？\n保存的价格和记录不受影响，两个数据保留选项（每小时价格合并、删除挂单明细）也保持不变。",
     SET_DONE_FMT = "%s：完成。",
     SET_CONFIRM_AGAIN = "再点一次确认",
-    SET_SCAN_STOPPED = "扫描已停止（数据已清除）",
+    SET_SCAN_STOPPED = "核实已停止（数据已清除）",
     SET_ABOUT = "关于",
     SET_VERSION_FMT = "版本 %s · 发布于 %s",
     SET_AUTHOR = "作者",
@@ -189,14 +181,10 @@ WC.AddLocale({
   zhTW = {
     SET_INTRO = "魔獸世界 Forever 賺錢助手。改動立即生效。",
     SET_GENERAL = "一般",
-    SET_CHAT = "掃描完成時在聊天框顯示最佳結果",
-    SET_CHAT_TIP = "在聊天框顯示一行這次掃描的最佳結果。",
-    SET_AUC = "用 Auctionator 的價格做估算",
-    SET_AUC_TIP = "Auctionator 在這個拍賣場完成一次全掃描後（當時 Getrich 已載入），12 小時內，箱子頁和 Writ 頁裡 Getrich 沒有親自搜尋過的物品先用它記錄的最低價。這類數字前面帶 ~：只知道最低價，整組購買可能更貴。輸入 /gr auc 可以查看目前是否在用。",
-    SET_QUICK = "箱子和 Writ 用快速掃描",
-    SET_QUICK_TIP = "有 Auctionator 的價格時，列表已經排好名，掃描只精確搜尋排在前面的幾項（幾秒鐘，而不是一兩分鐘）。關閉後每次掃描都搜尋全部。",
-    SET_QUICKTOP = "快速掃描核實幾項",
-    SET_QUICKTOP_TIP = "快速掃描時，精確搜尋排在最前面的幾個箱子 / Writ。",
+    SET_CHAT = "核實完成時在聊天框顯示最佳結果",
+    SET_CHAT_TIP = "在聊天框顯示一行這次核實的最佳結果。",
+    SET_QUICKTOP = "『核實前幾名』核實幾項",
+    SET_QUICKTOP_TIP = "精確搜尋排在最前面的幾個箱子、Writ 或配方。每一項需要幾秒鐘。",
     SET_DOCK = "視窗貼在拍賣場旁邊",
     SET_DOCK_TIP = "打開拍賣場時，Getrich 視窗出現在拍賣場右邊（你拖動過視窗的話就留在原處）。",
     SET_AHTINT = "在拍賣場標出便宜的掛單",
@@ -213,7 +201,7 @@ WC.AddLocale({
     SET_FLIP_GONE = "顯示已經不便宜的",
     SET_FLIP_GONE_TIP = "精確查詢時，有些物品已經被買走，或者不再低於商店價。預設隱藏，勾選後顯示。",
     SET_FLIP_CAND = "逐個精確查詢的物品數",
-    SET_FLIP_CAND_TIP = "讀完整個拍賣場後，挑出最有希望的這麼多種物品逐個查詢準確價格。數量越多，掃描越久。",
+    SET_FLIP_CAND_TIP = "倒賣頁點核實時，逐個精確搜尋最有希望的這麼多種物品。數量越多，時間越久。",
     SET_CRAFT_ONLY = "只看賺錢的配方",
     SET_CRAFT_ONLY_TIP = "不管怎麼賣成品都虧錢的配方不顯示。",
     SET_CRAFT_MISSING = "隱藏缺價格的配方",
@@ -247,11 +235,11 @@ WC.AddLocale({
     SET_PRUNE_TIP = "超過這麼多天的搜尋結果和全拍賣場掛單行會被刪除。價格走勢保留。",
     SET_DAYS_FMT = "%d 天",
     SET_DATA = "儲存的資料",
-    SET_DATA_SUMMARY = "目前儲存：%d 種物品的價格走勢 · %d 筆搜尋結果 · %d 種全拍賣場讀取的物品 · %d 次分解 · %d 個商店價格",
+    SET_DATA_SUMMARY = "目前儲存：%d 種物品的價格走勢 · %d 筆精確搜尋結果 · %d 次分解 · %d 個商店價格",
     SET_CLEAR_HISTORY = "清除價格走勢",
     SET_CLEAR_HISTORY_Q = "刪除所有物品的價格走勢紀錄？\n刪除後無法復原。",
-    SET_CLEAR_SCANS = "清除掃描結果",
-    SET_CLEAR_SCANS_Q = "刪除所有拍賣場掃描結果（逐個搜尋的價格和讀取整個拍賣場的價格）？\n刪除後無法復原。",
+    SET_CLEAR_SCANS = "清除搜尋結果",
+    SET_CLEAR_SCANS_Q = "刪除 Getrich 自己搜尋拍賣場得到的全部結果（核實過的物品的掛單明細）？\nAuctionator 的價格不受影響。刪除後無法復原。",
     SET_CLEAR_DE = "清除分解紀錄",
     SET_CLEAR_DE_Q = "刪除你記錄的分解結果？\n分解價值會變回估計值。",
     SET_CLEAR_VENDOR = "清除商人紀錄",
@@ -260,7 +248,7 @@ WC.AddLocale({
     SET_RESET_Q = "把所有選項恢復成預設值？\n儲存的價格和紀錄不受影響，兩個資料保留選項（每小時價格合併、刪除掛單明細）也保持不變。",
     SET_DONE_FMT = "%s：完成。",
     SET_CONFIRM_AGAIN = "再點一次確認",
-    SET_SCAN_STOPPED = "掃描已停止（資料已清除）",
+    SET_SCAN_STOPPED = "核實已停止（資料已清除）",
     SET_ABOUT = "關於",
     SET_VERSION_FMT = "版本 %s · 發佈於 %s",
     SET_AUTHOR = "作者",
@@ -544,11 +532,8 @@ function S:Build()
   Note(L.SET_INTRO)
 
   Header(L.SET_GENERAL)
-  CheckRow("autoScan", L.AUTO_SCAN, L.AUTO_SCAN_TIP)
   CheckRow("soundOnDone", L.UI_SOUND, L.UI_SOUND_TIP)
   CheckRow("chatOnDone", L.SET_CHAT, L.SET_CHAT_TIP)
-  CheckRow("useAuctionator", L.SET_AUC, L.SET_AUC_TIP)
-  CheckRow("quickScan", L.SET_QUICK, L.SET_QUICK_TIP)
   ChoiceRow("quickTop", L.SET_QUICKTOP, L.SET_QUICKTOP_TIP, { { 3, "3" }, { 5, "5" }, { 10, "10" }, { 20, "20" } })
   CheckRow("dockToAH", L.SET_DOCK, L.SET_DOCK_TIP)
   CheckRow("ahTint", L.SET_AHTINT, L.SET_AHTINT_TIP)
@@ -600,7 +585,7 @@ function S:Build()
   ChoiceRow("pruneDays", L.SET_PRUNE, L.SET_PRUNE_TIP, DaysOptions({ 3, 7, 14, 30 }))
 
   Header(L.SET_DATA)
-  self.summary = Note(L.SET_DATA_SUMMARY:format(0, 0, 0, 0, 0))
+  self.summary = Note(L.SET_DATA_SUMMARY:format(0, 0, 0, 0))
   self.summary:SetHeight(28)
   y = y - 12
   -- two per row; "reset settings" on a row of its own
@@ -677,12 +662,11 @@ function S:Refresh()
     end
   end
   local db = GetrichDB or {}
-  local browse = type(db.browse) == "table" and db.browse.items
   local casts = 0
   if type(db.deSamples) == "table" then
     for _, s in pairs(db.deSamples) do casts = casts + (type(s) == "table" and tonumber(s.casts) or 0) end
   end
-  self.summary:SetText(L.SET_DATA_SUMMARY:format(Count(db.history), Count(db.results), Count(browse), casts, Count(db.vendorObs)))
+  self.summary:SetText(L.SET_DATA_SUMMARY:format(Count(db.history), Count(db.results), casts, Count(db.vendorObs)))
   local v = WC.VERSION or (WC.UI and WC.UI.Meta and WC.UI.Meta("Version")) or "?"
   local released = WC.RELEASED or (WC.UI and WC.UI.Meta and WC.UI.Meta("X-Released")) or "?"
   self.aboutVersion:SetText(L.SET_VERSION_FMT:format(v, released))
@@ -706,17 +690,14 @@ function S:Clear(what)
   elseif what == "scans" then
     if WC.Scanner and WC.Scanner.active then WC.Scanner:Stop(L.SET_SCAN_STOPPED) end
     Wipe(db.results)                       -- emptied in place: the Scanner keeps a reference to it
-    if type(db.browse) == "table" then
-      Wipe(db.browse.items)
-      db.browse.full, db.browse.gear = nil, nil
-    end
     Wipe(db.scannedAt)
-    if type(db.markets) == "table" then      -- the other Auction Houses' scans too
+    if type(db.markets) == "table" then      -- the other Auction Houses' search results too
       for _, m in pairs(db.markets) do
-        if type(m) == "table" then m.results, m.browse, m.scannedAt = nil, nil, nil end
+        if type(m) == "table" then m.results, m.scannedAt = nil, nil end
       end
     end
-    if type(db.extScans) == "table" then Wipe(db.extScans) end    -- and the Auctionator scans watched (External.lua)
+    -- (db.extScans stays: when and where Auctionator's scans were seen is not a search result, and without it
+    -- the prices of another Auction House would be taken for this one's)
     if WC.External then WC.External:Invalidate() end
     WC:Fire("PRICES_UPDATED", "clear")
   elseif what == "de" then

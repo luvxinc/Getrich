@@ -1,7 +1,8 @@
 local addonName, WC = ...
 
 -- Profit calculations (SPEC 3.7). Pure math on top of:
---   Store     WC:CostForAny, WC:UnitPrice, WC:DB() (results / browse)
+--   Store     WC:CostForAny, WC:UnitPrice (Auctionator's prices, or the order book of an exact search), WC:DB()
+--   External  WC.External:Lists() (what is for sale below the vendor price; disenchantable gear for sale)
 --   Merchant  WC:VendorPrice
 --   Recipes   WC.Recipes:ForChar, WC:EnchantingSkill
 --   DE        WC.DE:Value
@@ -12,7 +13,8 @@ local addonName, WC = ...
 --   Profit:Craft(charKey)         profit of every captured recipe that makes an item
 --   Profit:CraftEntry(recipeID)   one Craft entry of the current character (profession window label)
 --   Profit:CraftCounts(charKey)   { total, noOutput, missing, loading, profitable, listed }
---   Profit:FlipCandidates(n)      items worth a targeted search for the flips scan
+--   Profit:FlipCandidates(n)      items worth an exact search for the Flips check
+--   Profit:CheckItems(n)          items the Crafting check searches
 --   Profit:Flips()                AH listings cheaper than what a vendor pays
 --   Profit:Disenchant()           disenchant value vs vendor / buy price for bag, AH and crafted gear
 -- Everything returned is a shared cache: read it, never change it.
@@ -49,7 +51,6 @@ local pairs, type, tonumber, pcall, next = pairs, type, tonumber, pcall, next
 local tsort = table.sort
 
 local REQUEST_AGAIN = 30     -- seconds before asking the client again for an item that hasn't loaded
-local BROWSE_SLACK  = 300    -- a browse takes up to ~4 min: entries stamped during it still count as current
 local EMPTY = {}
 
 local gen = 1                -- bumped when prices / recipes / vendor / DE samples / settings change
@@ -143,10 +144,14 @@ local function Results()
   return r
 end
 
-local function Browse()
-  local db = DB()
-  local b = db and db.browse
-  if type(b) == "table" then return b end
+-- From Auctionator's prices (External.lua): flips = { [itemID] = row } for sale below about the vendor price,
+-- gear = { [itemID] = row } disenchantable gear for sale, t = when the prices are from. row = { min, t, ilvl }.
+-- nil when there are no prices to use.
+local function Lists()
+  local X = WC.External
+  if not (X and X.Lists) then return nil end
+  local ok, flips, gear, t = pcall(X.Lists, X)
+  if ok and type(flips) == "table" and type(gear) == "table" then return flips, gear, t end
   return nil
 end
 
@@ -229,7 +234,7 @@ local matCache = {}   -- [itemID] = { [qty] = mat }
 local function FillMat(m, itemID, qty)
   m.itemID, m.qty = itemID, qty
 
-  -- Auction House: order-book walk (or browse estimate, status "est")
+  -- Auction House: order-book walk of an exact search, or Auctionator's cheapest price x qty (status "est")
   local cost, status, info = CostForAny(itemID, qty)
   if type(info) ~= "table" then info = nil end
   local ah = m.ah
@@ -693,63 +698,48 @@ local function SortedKeys(set)
   return t
 end
 
-local function CraftScanItems()
-  local charKey = CurrentChar()
-  local recipes = RecipesFor(charKey)
-  local items = {}
-  local reag, outs, anyGear = {}, {}, false
-  local function Reagent(id)
-    if id and reag[id] == nil then
-      -- skip the AH search only for a confirmed unlimited vendor; limited stock or a Classic-only
-      -- location still gets searched so the AH price is known as a fallback
-      local unit, info = VendorPrice(id)
-      local confirmed = unit and type(info) == "table" and not info.limited and not info.classic
-      reag[id] = not confirmed
-    end
-  end
-  for _, r in pairs(recipes or EMPTY) do
-    if type(r) == "table" and r.o then
-      outs[r.o] = true
-      local list = (type(r.r) == "table") and r.r or EMPTY
-      for i = 1, #list do
-        local rg = list[i]
-        Reagent((type(rg) == "table") and tonumber(rg[1] or rg.itemID) or nil)
-      end
-    end
-  end
-  -- skill-up candidates (learned + trainer) of each profession in [skill, min(target, skill + 50)]
-  local Lv = WC.Leveling
-  if Lv and Lv.ScanItems then
-    local ok, lr, lo = pcall(Lv.ScanItems, Lv, charKey)
-    if ok and type(lr) == "table" then
-      for id in pairs(lr) do Reagent(id) end
-      if type(lo) == "table" then
-        for id in pairs(lo) do outs[id] = true end
-      end
-    end
-  end
-  local seen = {}
+-- What the Crafting tab's check button searches exactly (Scanner kind "craft"):
+--   profit mode:   what the n most profitable recipes buy at the Auction House, and what they make;
+--   skill-up mode: the shopping list of the route on screen, and what its steps make.
+function Profit:CheckItems(n)
+  n = tonumber(n) or 5
+  local items, seen = {}, {}
   local function Add(id)
-    if not seen[id] then seen[id] = true; items[#items + 1] = id end
+    if type(id) == "number" and not seen[id] then seen[id] = true; items[#items + 1] = id end
   end
-  local need = {}
-  for id, search in pairs(reag) do
-    if search then need[id] = true end
+  local db = DB() or EMPTY
+  local charKey = CurrentChar()
+  local Lv = WC.Leveling
+  if db.craftMode == "level" then
+    if Lv and Lv.Plan and db.levelProf then
+      local ok, plan = pcall(Lv.Plan, Lv, charKey, db.levelProf)
+      if ok and type(plan) == "table" then
+        local mats = type(plan.mats) == "table" and plan.mats or EMPTY
+        for i = 1, #mats do
+          if mats[i].source ~= "vendor" then Add(mats[i].itemID) end
+        end
+        local steps = type(plan.steps) == "table" and plan.steps or EMPTY
+        for i = 1, #steps do Add(steps[i].itemID) end
+      end
+    end
+    return items
   end
-  local list = SortedKeys(need)
-  for i = 1, #list do Add(list[i]) end
-  list = SortedKeys(outs)
+  local list = self:Craft(charKey)
+  local taken = 0
   for i = 1, #list do
-    Add(list[i])
-    if not anyGear and IsGearClass(list[i]) then anyGear = true end
-  end
-  if anyGear and EnchSkill(CurrentChar()) and WC.DE and type(WC.DE.mats) == "table" then
-    list = SortedKeys(WC.DE.mats)
-    for i = 1, #list do Add(list[i]) end
+    local e = list[i]
+    if e.best then
+      local reags = e.reagents or EMPTY
+      for j = 1, #reags do
+        if reags[j].source ~= "vendor" then Add(reags[j].itemID) end
+      end
+      Add(e.itemID)
+      taken = taken + 1
+      if taken >= n then break end
+    end
   end
   return items
 end
-Profit.CraftScanItems = CraftScanItems
 
 local kindRegistered = false
 local function RegisterScanKind()
@@ -759,11 +749,16 @@ local function RegisterScanKind()
   local ok = pcall(S.RegisterKind, S, "craft", {
     label = function() return L.PROFIT_SCAN_LABEL end,
     canStart = function()
-      if #CraftScanItems() > 0 then return true end
-      return false, L.PROFIT_NO_RECIPES
+      local X = WC.External
+      if X and X.Usable and not X:Usable() then return false, X:Describe() end
+      local n = S.QuickTop and S.QuickTop() or 5
+      if #Profit:CheckItems(n) > 0 then return true end
+      local recipes = RecipesFor(CurrentChar())
+      if not recipes or next(recipes) == nil then return false, L.PROFIT_NO_RECIPES end
+      return false, L.SCAN_NOTHING
     end,
     phases = {
-      { type = "search", items = CraftScanItems, label = L.PROFIT_SCAN_PHASE },
+      { items = function() return Profit:CheckItems(S.QuickTop and S.QuickTop() or 5) end, label = L.PROFIT_SCAN_PHASE },
     },
   })
   if ok then kindRegistered = true end
@@ -772,24 +767,23 @@ end
 -- ---------------------------------------------------------------------------
 -- flips: AH listings below the vendor sell price
 
--- itemIDs from the browse snapshot whose cheapest listing is below the vendor price,
--- biggest potential first: (sell - min) * min(qty, 20). Unknown sell prices are requested.
+-- itemIDs Auctionator has for sale below the vendor price, biggest gain per item first. How many are listed at
+-- that price is what the check finds out. The vendor price is the client's own once the item is loaded (asked for
+-- here), until then the built-in one.
 function Profit:FlipCandidates(n)
   n = tonumber(n) or 80
   local out = {}
-  local browse = Browse()
-  local items = browse and browse.items
+  local items = Lists()
   if type(items) ~= "table" then return out end
+  local _, static = WC.ItemTable()
   local score = {}
   for itemID, b in pairs(items) do
     local min = type(b) == "table" and tonumber(b.min)
     if min and min > 0 then
-      local sell = Sell(itemID)
+      local sell = Sell(itemID) or static[itemID]
       if sell and sell > 0 and min < sell then
-        local q = tonumber(b.qty) or 1
-        if q < 1 then q = 1 elseif q > 20 then q = 20 end
         out[#out + 1] = itemID
-        score[itemID] = (sell - min) * q
+        score[itemID] = sell - min
       end
     end
   end
@@ -802,39 +796,22 @@ function Profit:FlipCandidates(n)
   return out
 end
 
--- Browse items whose vendor price is still loading (the ones never asked for are asked for now). The flips scan
--- waits until this is 0 (or a timeout) before picking candidates: on a fresh login most items aren't cached yet.
--- Items the client could not load (ITEM_DATA_LOAD_RESULT false) don't count.
-function Profit:FlipPending()
-  local browse = Browse()
-  local items = browse and browse.items
-  if type(items) ~= "table" then return 0 end
-  local n = 0
-  for itemID, b in pairs(items) do
-    local min = type(b) == "table" and tonumber(b.min)
-    if min and min > 0 and WC.SellPrice(itemID) == nil then
-      if requested[itemID] == nil then Request(itemID) end
-      if pendingLoad[itemID] then n = n + 1 end
-    end
-  end
-  return n
-end
-
 local flip = { list = {}, byItem = {}, stats = {} }
 local flipSpare
 
 -- Fill e for one item; returns true when it is (or just stopped being) a flip.
+-- b = Auctionator's row of the item (nil: only searched), r = the order book of an exact search (nil: not searched).
 local function FillFlip(e, itemID, b, r, sell)
   local bmin = b and tonumber(b.min)
   local bt = b and tonumber(b.t)
-  local browseSays = bmin and bmin > 0 and bmin < sell
+  local scanSays = bmin and bmin > 0 and bmin < sell
   local rt = r and tonumber(r.time)
-  -- an order book only speaks for the variant it was searched with: random-suffix gear must match the suffix of the
-  -- variant the browse showed (Scanner stores the searched key's suffix as r.sfx)
-  local sameKey = r and (tonumber(r.sfx) or 0) == (tonumber(b and b.sfx) or 0)
+  -- A search that found nothing proves nothing for gear: random-suffix gear ("of the Bear") is listed under its
+  -- suffix, which the search does not know. Such an item stays an estimate.
+  local trusted = r and (r.status == "listed" or (r.status == "none" and not IsGearClass(itemID)))
   e.itemID, e.sell, e.more = itemID, sell, nil
-  if rt and sameKey and (not bt or rt >= bt) and (r.status == "listed" or r.status == "none") then
-    -- searched after the browse: the order book is the truth
+  if rt and trusted and (not bt or rt >= bt) then
+    -- searched after Auctionator's scan: the order book is the truth
     local entries = (r.status == "listed" and type(r.entries) == "table") and r.entries or EMPTY
     local qty, cost, profit, last = 0, 0, 0, 0
     for i = 1, #entries do
@@ -860,7 +837,7 @@ local function FillFlip(e, itemID, b, r, sell)
         if avail > covered then e.more = true end
       end
       return true
-    elseif browseSays then
+    elseif scanSays then
       local unit = entries[1] and entries[1][1] or nil
       e.status, e.unit, e.qty, e.cost, e.profit = "gone", unit, 0, 0, 0
       e.perUnit = unit and (sell - unit) or nil
@@ -869,10 +846,10 @@ local function FillFlip(e, itemID, b, r, sell)
     end
     return false
   end
-  if browseSays then
-    -- only the browse snapshot: cheapest price known, quantity below the vendor price unknown
+  if scanSays then
+    -- only Auctionator's price: the cheapest listing is known, how many are below the vendor price is not
     e.status, e.unit, e.qty, e.cost, e.profit = "est", bmin, nil, bmin, sell - bmin
-    e.perUnit, e.time, e.source, e.listed = sell - bmin, bt, "browse", tonumber(b.qty)
+    e.perUnit, e.time, e.source, e.listed = sell - bmin, bt, "auctionator", nil
     return true
   end
   return false
@@ -906,7 +883,7 @@ local function AddFlip(itemID, b, r, sell)
 end
 
 -- Entries { itemID, unit, sell, qty, cost, profit, perUnit, status = "ok"|"est"|"gone", time,
---   source = "search"|"browse", listed (units listed, any price), more (qty is a minimum) },
+--   source = "search"|"auctionator", listed (units listed, any price; nil for an estimate), more (qty is a minimum) },
 -- sorted by profit ("gone" last), plus stats { ok, est, gone, loading }.
 function Profit:Flips()
   if flip.gen == gen then return flip.list, flip.stats end
@@ -914,28 +891,34 @@ function Profit:Flips()
   ClearArray(list)
   local counts = { ok = 0, est = 0, gone = 0 }
   local loading = 0
-  local browse = Browse()
-  local items = (browse and type(browse.items) == "table") and browse.items or EMPTY
+  local items = Lists() or EMPTY
   local results = Results()
+  local _, static = WC.ItemTable()
+  -- the vendor price is the client's own once it has the item (asked for by Sell), until then the built-in one:
+  -- the list is complete right after login, and "loading" counts the rows still on the built-in price
+  local function SellOf(itemID)
+    local sell = Sell(itemID)
+    if sell == nil then
+      loading = loading + 1
+      sell = static[itemID]
+    end
+    return sell
+  end
   for itemID, b in pairs(items) do
     if type(b) == "table" then
-      local sell = Sell(itemID)
-      if sell == nil then
-        loading = loading + 1
-      elseif sell > 0 then
+      local sell = SellOf(itemID)
+      if sell and sell > 0 then
         local r = results[itemID]
         local st = AddFlip(itemID, b, type(r) == "table" and r or nil, sell)
         if st then counts[st] = counts[st] + 1 end
       end
     end
   end
-  -- searched items that weren't in the browse (e.g. crate materials)
+  -- searched items Auctionator does not have below the vendor price (its price is older than the search)
   for itemID, r in pairs(results) do
     if items[itemID] == nil and type(r) == "table" and r.status == "listed" then
-      local sell = Sell(itemID)
-      if sell == nil then
-        loading = loading + 1
-      elseif sell > 0 then
+      local sell = SellOf(itemID)
+      if sell and sell > 0 then
         local st = AddFlip(itemID, nil, r, sell)
         if st then counts[st] = counts[st] + 1 end
       end
@@ -1072,21 +1055,24 @@ local function ScanAH(ench)
   local map, list = de.ah, de.ahList
   ClearArray(list)
   local stamp = gen
-  local browse = Browse()
-  local items = browse and browse.items
+  local _, items = Lists()
+  local _, static = WC.ItemTable()
   if ench and type(items) == "table" then
-    -- only listings seen by the latest browse (older entries may be sold)
-    local since = math.max(tonumber(browse.gear) or 0, tonumber(browse.full) or 0) - BROWSE_SLACK
+    -- gear Auctionator saw in its last full scan (External.lua), at the cheapest price it saw
     for itemID, b in pairs(items) do
       local min = type(b) == "table" and tonumber(b.min) or nil
-      if min and min > 0 and (tonumber(b.t) or 0) >= since and IsGearClass(itemID) then
+      if min and min > 0 then
         local e, fresh = TakeEntry(map, itemID)
         if FillDE(e, itemID, tonumber(b.ilvl), ench, false) then
           map[itemID] = e
           e.stamp, e.source = stamp, "ah"
           e.count, e.link, e.bound, e.recipeID, e.yield, e.costMissing = nil, nil, nil, nil, nil, nil
-          e.sell = Sell(itemID)
-          e.buy, e.time, e.listed = min, tonumber(b.t), tonumber(b.qty)
+          -- the vendor price from the built-in table until the client has the item (not asked for here: this
+          -- list can be hundreds of items long)
+          local sell = WC.SellPrice(itemID)
+          if sell == nil then sell = static[itemID] end
+          e.sell = sell
+          e.buy, e.time, e.listed = min, tonumber(b.t), nil
           e.gain = e.value and (e.value - min) or nil
           e.totalGain = nil
           e.status = DEStatus(e, min)
@@ -1218,28 +1204,7 @@ function Profit:Generation() return gen end
 Profit.internal = { FillEntry = FillEntry, EnchSkill = EnchSkill, CurrentChar = CurrentChar, DB = DB,
                     StaticRow = StaticRow, ProfsOf = ProfsOf, ClearArray = ClearArray }
 
--- While a browse runs (flips / de scans), ask the client for the items it just listed, so their vendor
--- price and item level are known by the time FlipCandidates / Disenchant need them (right after the browse).
--- Only entries stamped since the previous call are looked at (the Scanner stamps t = time() per page).
-local warmSince = 0
-local function WarmBrowse()
-  local browse = Browse()
-  local items = browse and browse.items
-  if type(items) ~= "table" then return end
-  local since = warmSince
-  warmSince = ((time and time()) or 0) - 1
-  for itemID, b in pairs(items) do
-    if type(b) == "table" and (tonumber(b.t) or 0) >= since and requested[itemID] == nil
-       and WC.SellPrice(itemID) == nil then
-      Request(itemID)
-    end
-  end
-end
-
-WC:On("PRICES_UPDATED", function(kind)
-  Invalidate()
-  if kind == "flips" or kind == "de" then WarmBrowse() end
-end)
+WC:On("PRICES_UPDATED", Invalidate)
 WC:On("RECIPES_UPDATED", Invalidate)
 WC:On("VENDOR_UPDATED", Invalidate)
 WC:On("DE_UPDATED", Invalidate)

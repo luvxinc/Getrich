@@ -20,24 +20,24 @@ WC.AddLocale({
     UI_TAB_CRATES = "Crates", UI_TAB_WRITS = "Writs", UI_TAB_FLIPS = "Flips",
     UI_TAB_CRAFT = "Crafting", UI_TAB_DE = "Disenchant", UI_TAB_HISTORY = "Prices",
     UI_VERSION_FMT = "v%s · %s",
-    UI_SCANNING_FMT = "Scanning %s",
+    UI_SCANNING_FMT = "Checking %s",
     UI_PHASE_FMT = "Phase %d/%d · %s",
+    UI_ROUND_FMT = "Round %d · %s",
     UI_ELAPSED_FMT = "%s elapsed",
     UI_LEFT_FMT = "about %s left",
     UI_SEC_FMT = "%ds",
     UI_MIN_FMT = "%dm %02ds",
-    UI_STARTING_FMT = "Starting scan: %s…",
-    UI_STARTING_N_FMT = "Starting scan: %s · %d items…",
-    UI_DONE_FMT = "Scan finished %s · %d items, %d listed, %d missing · %s",
-    UI_DONE_BROWSED_FMT = "%d items browsed",
-    UI_DONE_CHAT_FMT = "Scan finished: %s (%s).",
+    UI_STARTING_FMT = "Checking: %s…",
+    UI_STARTING_N_FMT = "Checking: %s · %d items…",
+    UI_DONE_FMT = "Checked %s · %d items, %d listed, %d not listed · %s",
+    UI_DONE_CHAT_FMT = "Check finished: %s (%s).",
     UI_SOUND = "Sound when done",
-    UI_SOUND_TIP = "Plays a sound when a scan finishes.",
+    UI_SOUND_TIP = "Plays a sound when a check finishes.",
     UI_CYCLE_HINT = "Left-click: next · Right-click: previous",
     UI_SEARCH = "Search…",
-    UI_SEARCH_AFTER_SCAN = "A scan is running, so \"%s\" was only put into the search box. Press Search when the scan is done.",
+    UI_SEARCH_AFTER_SCAN = "A check is running, so \"%s\" was only put into the search box. Press Search when it is done.",
     UI_TAB_ERROR_FMT = "Error in the %s tab: %s",
-    UI_HELP = "/gr: open or close · /gr scan: scan this tab · /gr scan <tab> · /gr stop · /gr <tab>: open a tab · /gr settings: options · /gr auc: Auctionator status · /gr errors: list errors (/getrich and /wc work too). Tabs: %s",
+    UI_HELP = "/gr: open or close · /gr check: check the best entries of this tab · /gr check <tab> · /gr stop · /gr <tab>: open a tab · /gr settings: options · /gr auc: where the prices are from · /gr errors: list errors (/getrich and /wc work too). Tabs: %s",
     UI_GEAR_TIP = "Settings",
     UI_GEAR_TIP2 = "All options, clearing saved data, and contact details (/gr settings).",
     UI_UNKNOWN_TAB_FMT = "There is no \"%s\" tab.",
@@ -45,24 +45,24 @@ WC.AddLocale({
   zhCN = {
     UI_TAB_CRATES = "箱子", UI_TAB_WRITS = "Writ", UI_TAB_FLIPS = "倒卖",
     UI_TAB_CRAFT = "制造", UI_TAB_DE = "分解", UI_TAB_HISTORY = "走势",
-    UI_SCANNING_FMT = "正在扫描：%s",
+    UI_SCANNING_FMT = "正在核实：%s",
     UI_PHASE_FMT = "第 %d/%d 步 · %s",
+    UI_ROUND_FMT = "第 %d 轮 · %s",
     UI_ELAPSED_FMT = "已用 %s",
     UI_LEFT_FMT = "约剩 %s",
     UI_SEC_FMT = "%d 秒",
     UI_MIN_FMT = "%d 分 %02d 秒",
-    UI_STARTING_FMT = "开始扫描：%s…",
-    UI_STARTING_N_FMT = "开始扫描：%s · %d 件物品…",
-    UI_DONE_FMT = "扫描完成 %s · %d 件物品，有货 %d，没货 %d · 用时 %s",
-    UI_DONE_BROWSED_FMT = "浏览了 %d 种物品",
-    UI_DONE_CHAT_FMT = "扫描完成：%s（用时 %s）。",
+    UI_STARTING_FMT = "开始核实：%s…",
+    UI_STARTING_N_FMT = "开始核实：%s · %d 件物品…",
+    UI_DONE_FMT = "核实完成 %s · %d 件物品，有货 %d，没货 %d · 用时 %s",
+    UI_DONE_CHAT_FMT = "核实完成：%s（用时 %s）。",
     UI_SOUND = "完成时提示音",
-    UI_SOUND_TIP = "扫描完成时播放一声提示音。",
+    UI_SOUND_TIP = "核实完成时播放一声提示音。",
     UI_CYCLE_HINT = "左键：下一个 · 右键：上一个",
     UI_SEARCH = "搜索…",
-    UI_SEARCH_AFTER_SCAN = "正在扫描，所以只把「%s」填进了搜索栏。扫描结束后再点搜索。",
+    UI_SEARCH_AFTER_SCAN = "正在核实，所以只把「%s」填进了搜索栏。核实结束后再点搜索。",
     UI_TAB_ERROR_FMT = "「%s」页出错：%s",
-    UI_HELP = "/gr：打开或关闭 · /gr scan：扫描当前页 · /gr scan <页> · /gr stop：停止 · /gr <页>：打开某页 · /gr settings：设置 · /gr auc：Auctionator 状态 · /gr errors：查看错误（/getrich 和 /wc 也可以）。页：%s",
+    UI_HELP = "/gr：打开或关闭 · /gr check：核实当前页的前几名 · /gr check <页> · /gr stop：停止 · /gr <页>：打开某页 · /gr settings：设置 · /gr auc：价格来源 · /gr errors：查看错误（/getrich 和 /wc 也可以）。页：%s",
     UI_GEAR_TIP = "设置",
     UI_GEAR_TIP2 = "所有选项、清除保存的数据、联系方式（/gr settings）。",
     UI_UNKNOWN_TAB_FMT = "没有「%s」这一页。",
@@ -70,24 +70,24 @@ WC.AddLocale({
   zhTW = {
     UI_TAB_CRATES = "箱子", UI_TAB_WRITS = "Writ", UI_TAB_FLIPS = "倒賣",
     UI_TAB_CRAFT = "製造", UI_TAB_DE = "分解", UI_TAB_HISTORY = "走勢",
-    UI_SCANNING_FMT = "正在掃描：%s",
+    UI_SCANNING_FMT = "正在核實：%s",
     UI_PHASE_FMT = "第 %d/%d 步 · %s",
+    UI_ROUND_FMT = "第 %d 輪 · %s",
     UI_ELAPSED_FMT = "已用 %s",
     UI_LEFT_FMT = "約剩 %s",
     UI_SEC_FMT = "%d 秒",
     UI_MIN_FMT = "%d 分 %02d 秒",
-    UI_STARTING_FMT = "開始掃描：%s…",
-    UI_STARTING_N_FMT = "開始掃描：%s · %d 件物品…",
-    UI_DONE_FMT = "掃描完成 %s · %d 件物品，有貨 %d，沒貨 %d · 用時 %s",
-    UI_DONE_BROWSED_FMT = "瀏覽了 %d 種物品",
-    UI_DONE_CHAT_FMT = "掃描完成：%s（用時 %s）。",
+    UI_STARTING_FMT = "開始核實：%s…",
+    UI_STARTING_N_FMT = "開始核實：%s · %d 件物品…",
+    UI_DONE_FMT = "核實完成 %s · %d 件物品，有貨 %d，沒貨 %d · 用時 %s",
+    UI_DONE_CHAT_FMT = "核實完成：%s（用時 %s）。",
     UI_SOUND = "完成時提示音",
-    UI_SOUND_TIP = "掃描完成時播放一聲提示音。",
+    UI_SOUND_TIP = "核實完成時播放一聲提示音。",
     UI_CYCLE_HINT = "左鍵：下一個 · 右鍵：上一個",
     UI_SEARCH = "搜尋…",
-    UI_SEARCH_AFTER_SCAN = "正在掃描，所以只把「%s」填進了搜尋欄。掃描結束後再點搜尋。",
+    UI_SEARCH_AFTER_SCAN = "正在核實，所以只把「%s」填進了搜尋欄。核實結束後再點搜尋。",
     UI_TAB_ERROR_FMT = "「%s」頁出錯：%s",
-    UI_HELP = "/gr：開啟或關閉 · /gr scan：掃描目前頁面 · /gr scan <頁> · /gr stop：停止 · /gr <頁>：開啟某頁 · /gr settings：設定 · /gr auc：Auctionator 狀態 · /gr errors：查看錯誤（/getrich 和 /wc 也可以）。頁：%s",
+    UI_HELP = "/gr：開啟或關閉 · /gr check：核實目前頁面的前幾名 · /gr check <頁> · /gr stop：停止 · /gr <頁>：開啟某頁 · /gr settings：設定 · /gr auc：價格來源 · /gr errors：查看錯誤（/getrich 和 /wc 也可以）。頁：%s",
     UI_GEAR_TIP = "設定",
     UI_GEAR_TIP2 = "所有選項、清除儲存的資料、聯絡方式（/gr settings）。",
     UI_UNKNOWN_TAB_FMT = "沒有「%s」這一頁。",
@@ -230,8 +230,7 @@ function UI.StandingText()
 end
 
 -- Put an item name into the Auction House search box and search.
--- While our own scan runs, only the text is filled: the search would be a throttled browse query
--- that also replaces the browse results the scanner may be reading.
+-- While a check runs, only the text is filled: the search would be one more throttled query.
 function WC:SearchAuctionHouse(itemID)
   local name = WC:ItemName(itemID)
   local ah = _G.AuctionHouseFrame
@@ -992,8 +991,7 @@ function UI:Create()
   end)
   scan:SetScript("OnLeave", GameTooltip_Hide)
   self.scanButton = scan
-  local auto = self:Check(f, L.AUTO_SCAN, 178, -93, "autoScan", L.AUTO_SCAN_TIP)
-  self.soundCheck = self:Check(f, L.UI_SOUND, 178 + 22 + auto.labelWidth + 18, -93, "soundOnDone", L.UI_SOUND_TIP)
+  self.soundCheck = self:Check(f, L.UI_SOUND, 178, -93, "soundOnDone", L.UI_SOUND_TIP)
 
   -- progress bar
   local barBg = CreateFrame("Frame", nil, f, "BackdropTemplate")
@@ -1116,6 +1114,14 @@ end
 for _, msg in ipairs({ "PRICES_UPDATED", "RECIPES_UPDATED", "VENDOR_UPDATED", "DE_UPDATED", "BAGS_UPDATED", "SETTINGS_CHANGED" }) do
   WC:On(msg, function() UI:RequestRefresh() end)
 end
+-- The bar says where the prices are from and how old they are: keep it true while the window is open and nothing
+-- is being checked (Auctionator stored new prices; or a minute passed, External.lua says so while an Auction
+-- House is open).
+local function IdleChanged()
+  if UI.frame and UI.frame:IsShown() and not (WC.Scanner and WC.Scanner.active) then UI:SetIdleText() end
+end
+WC:On("PRICES_UPDATED", function(source) if source == "external" then IdleChanged() end end)
+WC:On("EXTERNAL_AGE", IdleChanged)
 WC:On("DB_READY", function()
   if UI.frame then UI:ApplyScale(); UI:SelectTab(WC:Tab()) end
 end)
@@ -1126,7 +1132,7 @@ end)
 
 -- ---------------------------------------------------------------------------
 -- progress bar
---   Scanner calls: OnScanStart(kind, total), OnScanPhase(kind, i, n, label),
+--   Scanner calls: OnScanStart(kind, total), OnScanPhase(kind, i, n, label, round),
 --   OnScanProgress(kind, done, total, label), OnScanDone(kind, stats), OnScanStopped(kind, reason, done, total).
 --   total may be nil (unknown) -> sliding bar. A 1-second ticker keeps the elapsed time current;
 --   it exists only while a scan is running.
@@ -1182,7 +1188,10 @@ function UI:RenderProgress()
   local parts = {}
   local total, done = p.total, p.done or 0
   local starting = (done == 0) and not p.label and not p.phases
-  if p.phases and p.phases > 1 then
+  if p.round and p.round > 1 then
+    -- what the first round found changed which entries are the best: those are searched now
+    parts[#parts + 1] = L.UI_ROUND_FMT:format(p.round, p.phaseLabel or KindLabel(p.kind))
+  elseif p.phases and p.phases > 1 then
     parts[#parts + 1] = L.UI_PHASE_FMT:format(p.phase or 1, p.phases, p.phaseLabel or KindLabel(p.kind))
   elseif starting then
     if total and total > 0 then
@@ -1234,10 +1243,10 @@ function UI:OnScanStart(kind, total)
   self:Refresh()
 end
 
-function UI:OnScanPhase(kind, phase, phases, phaseLabel)
+function UI:OnScanPhase(kind, phase, phases, phaseLabel, round)
   if not (self.frame and self.prog) then return end
   local p = self.prog
-  p.phase, p.phases, p.phaseLabel = phase, phases, phaseLabel
+  p.phase, p.phases, p.phaseLabel, p.round = phase, phases, phaseLabel, round
   p.done, p.total, p.label = 0, nil, nil
   self:RenderProgress()
 end
@@ -1259,7 +1268,7 @@ local function PlayDoneSound()
   if play then pcall(play, id) end
 end
 
--- stats = { total, listed, missing, seconds, browsed = n|nil } (1.3.0: kind, total, listed, missing, seconds)
+-- stats = { total, listed, missing, seconds } (1.3.0: kind, total, listed, missing, seconds)
 function UI:OnScanDone(kind, stats, ...)
   if not self.frame then return end
   if type(stats) ~= "table" then
@@ -1275,9 +1284,8 @@ function UI:OnScanDone(kind, stats, ...)
   self.bar:SetStatusBarColor(0.25, 0.75, 0.35)
   self.bar:SetValue(1)
   self.spark:Hide()
-  local text = L.UI_DONE_FMT:format(date("%H:%M"), stats.total or 0, stats.listed or 0, stats.missing or 0, UI.Duration(seconds))
-  if stats.browsed then text = text .. " · " .. L.UI_DONE_BROWSED_FMT:format(stats.browsed) end
-  self.barText:SetText(text)
+  self.barText:SetText(L.UI_DONE_FMT:format(date("%H:%M"), stats.total or 0, stats.listed or 0, stats.missing or 0,
+                                            UI.Duration(seconds)))
   self:Refresh()
   local key = self:TabForKind(kind)
   local tab = key and self.tabs[key]
@@ -1310,32 +1318,26 @@ function UI:OnScanStopped(kind, reason, done, total)
   self:Refresh()
 end
 
+-- The bar while nothing is being checked: where the prices are from and how old they are, or what is missing.
 function UI:SetIdleText()
   if not self.bar then return end
   local db = DB()
   local kind = self:CurrentScanKind()
   local at = type(db.scannedAt) == "table" and db.scannedAt[kind]
-  -- Flips / Disenchant (whole-AH reads) and auto-scan switched off: only a click starts a scan
-  local manual = (kind == "flips" or kind == "de" or not db.autoScan)
   self:SetIndeterminate(false)
   self.bar:SetStatusBarColor(0.35, 0.37, 0.4)
-  -- crates / writs with Auctionator's prices: the list is ranked from them, a scan checks the top exactly
-  local X, S = WC.External, WC.Scanner
-  local extAge = (kind == "crates" or kind == "writs") and X and X.AgeSeconds and S and S.IsQuick and S.IsQuick()
-                 and X:AgeSeconds() or nil
-  if extAge then
-    self.bar:SetValue(at and 1 or 0)
-    if at then
-      self.barText:SetText(L.IDLE_QUICK_LAST:format(date("%m/%d %H:%M", at), UI.Age(extAge)))
-    else
-      self.barText:SetText(L.IDLE_QUICK:format(UI.Age(extAge), tonumber(db.quickTop) or 5))
-    end
+  local X = WC.External
+  local age = X and X.AgeText and X:AgeText() or nil
+  if not age then
+    -- no Auctionator, no full scan in it yet, or its last scan was at another Auction House
+    self.bar:SetValue(0)
+    self.barText:SetText(X and X.Describe and X:Describe() or "")
   elseif at then
     self.bar:SetValue(1)
-    self.barText:SetText(((manual and L.IDLE_LAST_MANUAL) or L.IDLE_LAST):format(date("%m/%d %H:%M", at)))
+    self.barText:SetText(L.IDLE_PRICES_CHECKED:format(age, date("%m/%d %H:%M", at)))
   else
     self.bar:SetValue(0)
-    self.barText:SetText((manual and L.IDLE_NEVER_MANUAL) or L.IDLE_NEVER)
+    self.barText:SetText(L.IDLE_PRICES:format(age))
   end
   self.scanButton:SetText(L.SCAN)
   self.spark:Hide()
@@ -1393,6 +1395,7 @@ end
 function UI:Show()
   self:Create()
   self.frame:Show()
+  if not (WC.Scanner and WC.Scanner.active) then self:SetIdleText() end   -- (the age of the prices moves on)
   self:Refresh()
 end
 

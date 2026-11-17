@@ -6,27 +6,21 @@ local L = WC.L
 
 WC.AddLocale({
   enUS = {
-    EST_NOTE = "~ = estimate: only the cheapest price is known (Auctionator, or a browse of the whole Auction House), so buying a whole bundle can cost more. A scan searches the best entries exactly.",
-    IDLE_QUICK = "~ = Auctionator's prices (%s old) · a scan checks the best %d exactly",
-    IDLE_QUICK_LAST = "Checked %s · ~ = Auctionator's prices (%s old)",
+    EST_NOTE = "~ = estimate: Auctionator only knows the cheapest price, so buying a whole bundle can cost more. \"Check the best\" searches the best entries exactly.",
     UI_AGE_MIN = "%d min",
     UI_AGE_HOUR = "%d h",
     TT_REWARD_GUESS = "Reward not confirmed: no source has published what an Artisan crate pays, so this continues the pattern of the lower tiers. The addon records the real reward the first time you turn one in.",
     TT_REWARD_SEEN = "Reward as recorded from your own turn-ins (%d).",
   },
   zhCN = {
-    EST_NOTE = "~ = 估算：只知道最低价（来自 Auctionator 或整库浏览），整组购买可能更贵。点扫描会精确核实排在前面的几项。",
-    IDLE_QUICK = "~ 是 Auctionator 的价格（%s前）· 扫描只精确核实前 %d 名",
-    IDLE_QUICK_LAST = "上次核实 %s · ~ 是 Auctionator 的价格（%s前）",
+    EST_NOTE = "~ = 估算：Auctionator 只记录最低价，整组购买可能更贵。点『核实前几名』会精确搜索排在前面的几项。",
     UI_AGE_MIN = "%d 分钟",
     UI_AGE_HOUR = "%d 小时",
     TT_REWARD_GUESS = "奖励未确认：目前没有任何来源公布 Artisan 箱子的奖励，这里按低等级箱子的规律估算。你交过一次后，插件会记下实际奖励并改用它。",
     TT_REWARD_SEEN = "奖励为你实际交箱记录到的数值（%d 次）。",
   },
   zhTW = {
-    EST_NOTE = "~ = 估算：只知道最低價（來自 Auctionator 或整庫瀏覽），整組購買可能更貴。點掃描會精確核實排在前面的幾項。",
-    IDLE_QUICK = "~ 是 Auctionator 的價格（%s前）· 掃描只精確核實前 %d 名",
-    IDLE_QUICK_LAST = "上次核實 %s · ~ 是 Auctionator 的價格（%s前）",
+    EST_NOTE = "~ = 估算：Auctionator 只記錄最低價，整組購買可能更貴。點『核實前幾名』會精確搜尋排在前面的幾項。",
     UI_AGE_MIN = "%d 分鐘",
     UI_AGE_HOUR = "%d 小時",
     TT_REWARD_GUESS = "獎勵未確認：目前沒有任何來源公布 Artisan 箱子的獎勵，這裡按低等級箱子的規律估算。你交過一次後，插件會記下實際獎勵並改用它。",

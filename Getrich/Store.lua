@@ -2,16 +2,18 @@ local addonName, WC = ...
 
 -- SavedVariables layout, prices and price history.
 --
+-- Auction House prices are Auctionator's (External.lua) and are not stored here: Auctionator keeps them itself.
+-- What is stored is what Getrich found out itself: the order books of the items it searched exactly ("check"
+-- button), the price history, and when it saw Auctionator finish a scan.
+--
 -- GetrichDB = {
 --   <settings>          see DEFAULTS below (+ keys other modules add with Store:Default)
 --   resultsFormat = 3,
 --   results   = { [itemID] = { status = "listed"|"none"|"timeout", entries = { {unit, qty}, ... } cheapest first,
 --                              min, avail, time } }            -- latest targeted search (same as 1.3.0)
---   (Init drops results and browse rows older than pruneDays, default 14)
---   browse    = { full = <time of last full browse>, gear = <time of last gear browse>,
---                 items = { [itemID] = { min = cheapest unit, qty = units listed, t = time, ilvl = item level|nil } } }
---   scannedAt = { [kind] = time },
---   history   = { [itemID] = { h = { [hourIndex] = { min = , qty = } },
+--   (Init drops results older than pruneDays, default 14)
+--   scannedAt = { [kind] = time },                                -- when a tab's entries were last checked
+--   history   = { [itemID] = { h = { [hourIndex] = { min = , qty = (nil: from an Auctionator scan) } },
 --                              d = { [dayIndex] = { lo = , avg = , hi = , n = } } } }
 --   watch     = { [itemID] = true },
 --   vendorObs = {}  (Merchant.lua)   recipes = {}, chars = {}  (Recipes.lua)   deSamples = {}  (Disenchant.lua)
@@ -19,10 +21,10 @@ local addonName, WC = ...
 --   extScans  = { [marketKey] = { t = time, ids = { itemID, ... } } }   Auctionator scans watched (External.lua)
 --   market    = "Forever <ruleset>|<Alliance / Horde / Neutral>" (a client with realms: "<realm>|..."): the Auction
 --               House the price tables above belong to
---   markets   = { [marketKey] = { results, scannedAt, browse, history } }   price tables of the other houses
+--   markets   = { [marketKey] = { results, scannedAt, history } }   price tables of the other houses
 -- }
--- Forever has one Auction House per ruleset and faction, and separate neutral houses. results, scannedAt, browse
--- and history are prices of ONE house, so they are swapped as a set when another house is used (Store:UseMarket):
+-- Forever has one Auction House per ruleset and faction, and separate neutral houses. results, scannedAt and
+-- history are prices of ONE house, so they are swapped as a set when another house is used (Store:UseMarket):
 -- every other module keeps reading GetrichDB.results etc. and always sees the house that is in use.
 -- hourIndex = floor(serverTime / 3600), dayIndex = floor(hourIndex / 24) (UTC days).
 -- Hourly records older than historyDays (default 30) are folded into one daily record { lo, avg, hi, n } when the
@@ -36,8 +38,7 @@ local RESULTS_FORMAT = 3
 
 Store.DEFAULTS = {
   tab = "crates",         -- open tab
-  autoScan = true,        -- scan the open tab when the Auction House opens
-  soundOnDone = true,     -- play a sound when a scan finishes
+  soundOnDone = true,     -- play a sound when a check finishes
   -- crates tab
   onlyMine = false,       -- only crates my level can open
   hideNoCrate = true,     -- ignore crates that nobody is selling
@@ -56,10 +57,13 @@ local TABLES = { "results", "scannedAt", "history", "watch", "vendorObs", "recip
                  "extScans" }
 
 -- the price tables of one Auction House (see the header)
-local MARKET_TABLES = { "results", "scannedAt", "history", "browse" }
+local MARKET_TABLES = { "results", "scannedAt", "history" }
+
+-- settings and tables of versions that scanned the Auction House themselves (up to 2026.11.1): dropped on load
+local OBSOLETE = { "autoScan", "useAuctionator", "quickScan", "browse" }
 
 -- what WC:DB() returns before the SavedVariables are loaded: defaults + empty tables
-local PRELOAD = setmetatable({ browse = { items = {} } }, { __index = DEFAULTS })
+local PRELOAD = setmetatable({}, { __index = DEFAULTS })
 for _, k in ipairs(TABLES) do PRELOAD[k] = {} end
 
 function WC:DB()
@@ -80,7 +84,7 @@ function Store:Default(key, value)
 end
 
 Store:Default("historyDays", 30)   -- hourly price history kept this many days, then one record per day
-Store:Default("pruneDays", 14)     -- search results / browse rows older than this are not used for prices
+Store:Default("pruneDays", 14)     -- search results older than this are not used for prices
 
 -- a whole number of days from the settings (the default if missing or out of range)
 local function Days(key, lo, hi)
@@ -122,8 +126,12 @@ function Store:Init()
   for _, k in ipairs(TABLES) do
     if type(db[k]) ~= "table" then db[k] = {} end
   end
-  if type(db.browse) ~= "table" then db.browse = {} end
-  if type(db.browse.items) ~= "table" then db.browse.items = {} end
+  for _, k in ipairs(OBSOLETE) do
+    db[k] = nil
+    if type(db.markets) == "table" then
+      for _, m in pairs(db.markets) do if type(m) == "table" then m[k] = nil end end
+    end
+  end
 
   self.db = db
   self:PruneOld()
@@ -205,7 +213,6 @@ function Store:UseMarket(key)
     local t = type(saved) == "table" and saved[k] or nil
     db[k] = type(t) == "table" and t or {}
   end
-  if type(db.browse.items) ~= "table" then db.browse.items = {} end
   db.market = key
   if WC.Scanner then WC.Scanner.results = db.results end
   self.relevant = nil
@@ -215,19 +222,16 @@ function Store:UseMarket(key)
   return true
 end
 
--- Drop search results and browse rows older than pruneDays. Returns results dropped, browse rows dropped.
+-- Drop search results older than pruneDays. Returns the number dropped.
 function Store:PruneOld(now)
   local db = GetrichDB
-  if not db or type(db.results) ~= "table" or type(db.browse) ~= "table" or type(db.browse.items) ~= "table" then return 0, 0 end
+  if not db or type(db.results) ~= "table" then return 0 end
   local cutoff = (now or time()) - Days("pruneDays", 1, 3650) * 86400
-  local nr, nb = 0, 0
+  local nr = 0
   for itemID, r in pairs(db.results) do
     if type(r.time) == "number" and r.time < cutoff then db.results[itemID] = nil; nr = nr + 1 end
   end
-  for itemID, b in pairs(db.browse.items) do
-    if type(b) ~= "table" or (type(b.t) == "number" and b.t < cutoff) then db.browse.items[itemID] = nil; nb = nb + 1 end
-  end
-  return nr, nb
+  return nr
 end
 
 -- Fold hourly records older than historyDays into daily { lo, avg, hi, n } (merged into an existing day).
@@ -419,37 +423,36 @@ function WC:CostFor(itemID, qty)
   return nil, "short", res
 end
 
--- the targeted result if it should be used (exists, has an answer, not older than the browse entry)
--- ext = true: Auctionator's price of the item (External.lua) counts like a browse row; the newer of the two is used
-local function PickSearch(itemID, ext)
+-- What to price an item from. Returns res (the order book of Getrich's own exact search), or nil and the row
+-- of Auctionator's last full scan (External.lua: { min, t } or { none = true, t }), or nil, nil (nothing known).
+-- The search is used when it is newer than the scan. An older search still stands when it is less than a day old
+-- and the scan shows the same cheapest price (or also nothing): the scan then confirms it, and the order book
+-- knows more than one price. A different price means the market has moved on; and after a day the same cheapest
+-- price says too little about the listings behind it.
+local CONFIRM_SECONDS = 86400
+local function PickSearch(itemID)
   local res = Results()[itemID]
-  local b = WC:DB().browse.items[itemID]
-  local X = ext and WC.External
-  if X and X.Row then
-    local x = X:Row(itemID)
-    if x and (not b or (x.t or 0) > (b.t or 0)) then
-      -- A newer Auctionator scan that shows the same cheapest price (or also nothing) confirms what the search
-      -- found: the order book stays. Only a different price means the market has moved on.
-      if res and ((res.status == "listed" and x.min and x.min == res.min) or (res.status == "none" and x.none)) then
-        return res, nil
-      end
-      b = x
+  local X = WC.External
+  local b = X and X.Row and X:Row(itemID) or nil
+  if res and res.status == "timeout" and b then res = nil end   -- no answer: Auctionator knows more
+  if res and b and (b.t or 0) > (res.time or 0) then
+    if time() - (res.time or 0) <= CONFIRM_SECONDS
+       and ((res.status == "listed" and b.min and b.min == res.min) or (res.status == "none" and b.none)) then
+      return res, nil
     end
+    return nil, b
   end
-  if res and res.status == "timeout" and b then res = nil end   -- no answer: the browse snapshot knows more
-  if res and (not b or (res.time or 0) >= (b.t or 0)) then return res, nil end
+  if res then return res, nil end
   return nil, b
 end
 
--- Cost of `qty` items from the best data we have: the targeted order book, or else the browse snapshot
--- (cheapest price x qty, status "est" because the price of the deeper listings is unknown).
+-- Cost of `qty` items from the best data there is: the order book of an exact search, or else Auctionator's
+-- cheapest price x qty (status "est": how many are listed at that price is not known, so this is a lower bound).
 -- status: "ok" | "short" | "est" | "none" | "timeout" | nil (no data)
--- info = { unit, time, source = "search"|"browse"|"auctionator", avail, est = true when not from a targeted search }
--- ext = true (only WC:CostBest, for the crate and writ tabs): also use a watched Auctionator scan (External.lua).
--- The other tabs price everything from Getrich's own searches and whole-AH reads, as before.
-function WC:CostForAny(itemID, qty, ext)
+-- info = { unit, time, source = "search"|"auctionator", avail, est = true when not from an exact search }
+function WC:CostForAny(itemID, qty)
   qty = qty or 1
-  local res, b = PickSearch(itemID, ext)
+  local res, b = PickSearch(itemID)
   if res then
     local cost, status = WC:CostFor(itemID, qty)
     local info = { time = res.time, source = "search", avail = res.avail }
@@ -471,24 +474,21 @@ function WC:CostForAny(itemID, qty, ext)
     return cost, status, info
   end
   if b and b.min then
-    local info = { unit = b.min, time = b.t, source = b.ext or "browse", avail = b.qty, est = true }
-    -- the browse row does tell how many are listed in total
-    if b.qty and b.qty < qty then return nil, "short", info end
-    return b.min * qty, "est", info
+    return b.min * qty, "est", { unit = b.min, time = b.t, source = b.ext or "auctionator", est = true }
   end
-  if b and b.none then     -- the Auctionator scan in use did not see the item
-    return nil, "none", { time = b.t, source = b.ext, est = true }
+  if b and b.none then     -- Auctionator's last full scan did not see the item
+    return nil, "none", { time = b.t, source = b.ext or "auctionator", est = true }
   end
   return nil, nil, nil
 end
 
 -- Cost of `qty` items for the crate and writ tabs: WC:CostForAny in the shape of WC:CostFor, plus an estimate flag.
 -- Returns cost, status ("ok" | "short" | "none" | "timeout" | nil), res, est.
---   est = true: the answer is not from a targeted search of this item (Auctionator or the browse snapshot: only the
---   cheapest price is known, so a bundle can cost more; "none" then means "not seen in that scan").
---   res = the targeted result, or for an estimate { min, avail, time, est = true, source }.
+--   est = true: the answer is not from an exact search of this item but from Auctionator (only the cheapest price
+--   is known, so a bundle can cost more; "none" then means "not seen in its last full scan").
+--   res = the order book of the search, or for an estimate { min, time, est = true, source }.
 function WC:CostBest(itemID, qty)
-  local cost, status, info = WC:CostForAny(itemID, qty, true)
+  local cost, status, info = WC:CostForAny(itemID, qty)
   if status == nil then return nil, nil, nil, false end
   if info and info.source == "search" then
     local est = (status == "est")            -- priced past the kept listings
@@ -499,13 +499,13 @@ function WC:CostBest(itemID, qty)
   return cost, (status == "est") and "ok" or status, res, true
 end
 
--- cheapest unit price, time, source ("search"|"browse"); nil if not listed / unknown
+-- cheapest unit price, time, source ("search"|"auctionator"); nil if not listed / unknown
 function WC:UnitPrice(itemID)
   local res, b = PickSearch(itemID)
   if res then
     if res.status == "listed" and res.min then return res.min, res.time, "search" end
     return nil
   end
-  if b and b.min then return b.min, b.t, "browse" end
+  if b and b.min then return b.min, b.t, b.ext or "auctionator" end
   return nil
 end
